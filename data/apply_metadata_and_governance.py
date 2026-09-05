@@ -20,6 +20,7 @@ Run: python data/apply_metadata_and_governance.py --catalog <cat> --schema <sche
         [--analyst-principal user@co.com]
 """
 import argparse
+import os
 from databricks.connect import DatabricksSession
 
 
@@ -121,87 +122,14 @@ def main():
     run(f"ALTER TABLE {fq}.fact_data_downloads ALTER COLUMN asset_sensitivity SET TAGS ('{sens_key}'='{sens_val}')")
 
     # ---------------------------------------------------------- metric views
+    # Definitions live as YAML in ../metric_views/*.yaml (single source of truth). Each file's
+    # {{FQ}} is substituted with <catalog>.<schema> and wrapped in CREATE VIEW ... WITH METRICS.
     print("== Metric views ==")
-    run(f"""CREATE OR REPLACE VIEW {fq}.mv_risk_behavior
-WITH METRICS LANGUAGE YAML AS $$
-version: 1.1
-comment: "Governed engineer access-risk metrics (replaces external semantic layer). Access-event grain."
-source: {fq}.fact_access_events
-joins:
-  - name: emp
-    source: {fq}.dim_employee
-    on: source.employee_id = emp.employee_id
-  - name: ast
-    source: {fq}.dim_asset
-    on: source.asset_id = ast.asset_id
-dimensions:
-  - name: Employee
-    expr: emp.name
-  - name: Employee Email
-    expr: emp.email
-  - name: Employee ID
-    expr: emp.employee_id
-  - name: Team
-    expr: emp.team
-  - name: Is Contractor
-    expr: emp.is_contractor
-  - name: Event Week
-    expr: DATE_TRUNC('WEEK', source.event_time)
-  - name: Event Date
-    expr: CAST(source.event_time AS DATE)
-  - name: Asset Sensitivity
-    expr: ast.sensitivity_level
-  - name: Action
-    expr: source.action
-measures:
-  - name: Access Event Count
-    expr: COUNT(1)
-  - name: High Risk Event Count
-    expr: SUM(CASE WHEN source.risk_score >= 70 THEN 1 ELSE 0 END)
-    comment: "Events with risk_score >= 70"
-  - name: After Hours Access Count
-    expr: SUM(CASE WHEN source.is_after_hours THEN 1 ELSE 0 END)
-  - name: External IP Access Count
-    expr: SUM(CASE WHEN source.is_external_ip THEN 1 ELSE 0 END)
-  - name: Avg Risk Score
-    expr: AVG(source.risk_score)
-  - name: Distinct Assets Accessed
-    expr: COUNT(DISTINCT source.asset_id)
-$$""")
-
-    run(f"""CREATE OR REPLACE VIEW {fq}.mv_data_movement
-WITH METRICS LANGUAGE YAML AS $$
-version: 1.1
-comment: "Governed data-egress metrics for exfiltration detection. Download grain."
-source: {fq}.fact_data_downloads
-joins:
-  - name: emp
-    source: {fq}.dim_employee
-    on: source.employee_id = emp.employee_id
-  - name: ast
-    source: {fq}.dim_asset
-    on: source.asset_id = ast.asset_id
-dimensions:
-  - name: Employee
-    expr: emp.name
-  - name: Team
-    expr: emp.team
-  - name: Event Week
-    expr: DATE_TRUNC('WEEK', source.event_time)
-  - name: Destination Type
-    expr: source.destination_type
-  - name: Asset Sensitivity
-    expr: ast.sensitivity_level
-measures:
-  - name: Download Count
-    expr: COUNT(1)
-  - name: Total Bytes Downloaded
-    expr: SUM(source.bytes_downloaded)
-  - name: Flagged Download Count
-    expr: SUM(CASE WHEN source.is_flagged THEN 1 ELSE 0 END)
-  - name: Sensitive Bytes Downloaded
-    expr: SUM(CASE WHEN ast.sensitivity_level IN ('restricted','confidential') THEN source.bytes_downloaded ELSE 0 END)
-$$""")
+    mv_dir = os.path.join(os.path.dirname(__file__), "..", "metric_views")
+    for view_name in ("mv_risk_behavior", "mv_data_movement"):
+        with open(os.path.join(mv_dir, f"{view_name}.yaml")) as f:
+            body = f.read().replace("{{FQ}}", fq)
+        run(f"CREATE OR REPLACE VIEW {fq}.{view_name}\nWITH METRICS LANGUAGE YAML AS $$\n{body}\n$$")
 
     # ----------------------------------------------- ABAC functions + policies
     print("== ABAC functions ==")

@@ -1,0 +1,33 @@
+# Governed metric view: data-egress metrics for exfiltration detection.
+# {{FQ}} is substituted with <catalog>.<schema> and wrapped in a CREATE VIEW ... WITH METRICS
+# statement by data/apply_metadata_and_governance.py.
+version: 1.1
+comment: "Governed data-egress metrics for exfiltration detection. Download grain."
+source: {{FQ}}.fact_data_downloads
+joins:
+  - name: emp
+    source: {{FQ}}.dim_employee
+    on: source.employee_id = emp.employee_id
+  - name: ast
+    source: {{FQ}}.dim_asset
+    on: source.asset_id = ast.asset_id
+dimensions:
+  - name: Employee
+    expr: emp.name
+  - name: Team
+    expr: emp.team
+  - name: Event Week
+    expr: DATE_TRUNC('WEEK', source.event_time)
+  - name: Destination Type
+    expr: source.destination_type
+  - name: Asset Sensitivity
+    expr: ast.sensitivity_level
+measures:
+  - name: Download Count
+    expr: COUNT(1)
+  - name: Total Bytes Downloaded
+    expr: SUM(source.bytes_downloaded)
+  - name: Flagged Download Count
+    expr: SUM(CASE WHEN source.is_flagged THEN 1 ELSE 0 END)
+  - name: Sensitive Bytes Downloaded
+    expr: SUM(CASE WHEN ast.sensitivity_level IN ('restricted','confidential') THEN source.bytes_downloaded ELSE 0 END)
