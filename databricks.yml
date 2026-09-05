@@ -12,11 +12,13 @@
 bundle:
   name: rd-security-demo
 
-# app/app.yaml is generated per-workspace by setup.sh and is .gitignored, but the bundle sync
-# respects .gitignore — so force-include it, or the deployed app has no `command` and won't start.
+# These are generated (app.yaml per-workspace by setup.sh; static/ by `bun run build`) and are
+# .gitignored — but the bundle sync respects .gitignore, so force-include them, or the deployed
+# app has no `command` (won't start) and no built frontend (blank page, "/" 404s).
 sync:
   include:
     - app/app.yaml
+    - app/backend/static/**
 
 variables:
   app_name:
