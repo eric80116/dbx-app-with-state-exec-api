@@ -65,10 +65,12 @@ def run_sql(token: str, sql: str, row_limit: int | None = None) -> dict[str, Any
 
 def list_objects(token: str) -> list[dict[str, Any]]:
     """Tables + views + metric views the user can see in the demo schema, with comments."""
+    # Exclude DLT/synced-table pipeline artifacts (e.g. event_log_<uuid>) — not part of the model.
     sql = f"""
       SELECT table_name, table_type, comment
       FROM {config.CATALOG}.information_schema.tables
       WHERE table_schema = '{config.SCHEMA}'
+        AND table_name NOT LIKE 'event_log%'
       ORDER BY table_name
     """
     out = run_sql(token, sql, row_limit=200)

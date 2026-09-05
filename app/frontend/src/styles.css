@@ -37,9 +37,9 @@ button.ghost { background: transparent; border: 1px solid var(--border); color: 
 .obj { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
 .obj:hover { border-color: var(--accent); }
 .obj.sel { border-color: var(--accent); background: var(--panel2); }
-.obj-head { display: flex; justify-content: space-between; align-items: center; }
-.obj-name { font-weight: 600; font-size: 13px; font-family: ui-monospace, monospace; }
-.type { font-size: 10px; color: var(--dim); border: 1px solid var(--border); padding: 1px 6px; border-radius: 6px; }
+.obj-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.obj-name { font-weight: 600; font-size: 13px; font-family: ui-monospace, monospace; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.type { font-size: 10px; color: var(--dim); border: 1px solid var(--border); padding: 1px 6px; border-radius: 6px; flex-shrink: 0; white-space: nowrap; }
 .type.mv { color: #b39dff; border-color: var(--mv); }
 .obj-comment { color: var(--dim); font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
 .detail-head { display: flex; justify-content: space-between; align-items: center; }
