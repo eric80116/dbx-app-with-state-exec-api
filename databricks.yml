@@ -12,6 +12,12 @@
 bundle:
   name: rd-security-demo
 
+# app/app.yaml is generated per-workspace by setup.sh and is .gitignored, but the bundle sync
+# respects .gitignore — so force-include it, or the deployed app has no `command` and won't start.
+sync:
+  include:
+    - app/app.yaml
+
 variables:
   app_name:
     description: Databricks App name (must be unique in the workspace)
