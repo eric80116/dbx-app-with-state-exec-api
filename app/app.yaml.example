@@ -1,0 +1,26 @@
+# Example Databricks Apps manifest. The real app.yaml is GENERATED per-workspace by
+# bootstrap/setup.sh (and is gitignored, since its values are workspace-specific).
+# This file documents the shape. DATABRICKS_HOST and DATABRICKS_CLIENT_ID are injected by the
+# Apps runtime; PGUSER is intentionally NOT set (the app defaults it to DATABRICKS_CLIENT_ID).
+command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+env:
+  - name: DBX_WAREHOUSE_ID
+    value: "<serverless-sql-warehouse-id>"
+  - name: DBX_CATALOG
+    value: "<uc-catalog>"
+  - name: DBX_SCHEMA
+    value: "rd_security_demo"
+  - name: DBX_GENIE_SPACE_ID
+    value: "<genie-space-id>"
+  - name: DBX_MAX_ROWS
+    value: "500"
+  - name: LAKEBASE_ENDPOINT
+    value: "projects/<lakebase-project>/branches/production/endpoints/primary"
+  - name: PGHOST
+    value: "<lakebase-endpoint-host>"
+  - name: PGDATABASE
+    value: "databricks_postgres"
+  - name: LAKEBASE_SCHEMA
+    value: "app_ops"
+  - name: LAKEBASE_HOTCACHE_TABLE
+    value: "public.mv_risk_behavior_daily"   # or app_ops.metric_hot_cache (manual refresh)

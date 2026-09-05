@@ -1,0 +1,52 @@
+# Databricks Asset Bundle for the RD Security Investigation demo.
+#
+# DAB deploys the Databricks App (FastAPI + React) and its OBO scopes. Everything
+# workspace-specific is a variable with NO hardcoded default — pass values at deploy
+# time (bootstrap/setup.sh does this for you, and also generates app/app.yaml, attaches
+# the Lakebase resource, and applies grants). The workspace host is taken from the CLI
+# --profile, so the same bundle deploys to any workspace.
+#
+# Deploy directly (advanced):
+#   databricks bundle deploy -t dev --profile <p> --var app_name=<n> --var warehouse_id=<id>
+
+bundle:
+  name: rd-security-demo
+
+variables:
+  app_name:
+    description: Databricks App name (must be unique in the workspace)
+    default: rd-security-investigation
+  warehouse_id:
+    description: Serverless SQL warehouse id for OBO Statement Execution (REQUIRED — no default)
+    default: ""
+
+resources:
+  apps:
+    rd_security_app:
+      name: ${var.app_name}
+      description: "Secure Statement Execution over UC metric views, via Databricks Apps OBO + Genie One."
+      source_code_path: ./app
+      # OBO scopes are declared here so they are set at app CREATE time. NOTE: `genie` (not
+      # `dashboards.genie`); do NOT add `iam.current-user:read` (auto-granted, rejected if set).
+      # setup.sh does a clean delete-then-create each run, so the bundle only ever CREATEs the
+      # app (updating an app with user-auth trips a CLI update-mask bug). The Lakebase `postgres`
+      # resource is added afterward via `apps create-update` (update_mask=resources), which the
+      # DAB `database` key can't do on Lakebase Autoscaling.
+      user_api_scopes:
+        - sql.statement-execution
+        - sql.warehouses
+        - catalog.catalogs
+        - catalog.schemas
+        - catalog.tables
+        - genie
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace.host intentionally omitted — taken from the --profile you deploy with.

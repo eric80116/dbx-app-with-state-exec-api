@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {"id": "10000000000000000000000000000001", "question": ["Which engineers showed the most high-risk behavior this week?"]},
+      {"id": "10000000000000000000000000000002", "question": ["Who downloaded sensitive data to personal cloud or USB in the last 14 days?"]},
+      {"id": "10000000000000000000000000000003", "question": ["Show after-hours access to restricted assets, broken down by team."]},
+      {"id": "10000000000000000000000000000004", "question": ["Which contractors have the highest average risk score this month?"]}
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.dim_asset"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.dim_employee"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.fact_access_events"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.fact_code_commits"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.fact_data_downloads"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.mv_data_movement"},
+      {"identifier": "serverless_stable_tlm05u_catalog.rd_security_demo.mv_risk_behavior"}
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": ["Which engineers showed the most high-risk behavior this week?"],
+        "sql": [
+          "SELECT `Employee`, `Team`, `Is Contractor`,\n",
+          "       MEASURE(`High Risk Event Count`) AS high_risk_events,\n",
+          "       ROUND(MEASURE(`Avg Risk Score`), 1) AS avg_risk,\n",
+          "       MEASURE(`After Hours Access Count`) AS after_hours\n",
+          "FROM serverless_stable_tlm05u_catalog.rd_security_demo.mv_risk_behavior\n",
+          "WHERE `Event Date` >= date_sub(current_date(), 7)\n",
+          "GROUP BY `Employee`, `Team`, `Is Contractor`\n",
+          "ORDER BY high_risk_events DESC\n",
+          "LIMIT 10"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": ["Who downloaded sensitive data to personal cloud or USB recently?"],
+        "sql": [
+          "SELECT e.name, e.team, e.is_contractor,\n",
+          "       COUNT(*) AS flagged_downloads,\n",
+          "       SUM(d.bytes_downloaded) AS total_bytes\n",
+          "FROM serverless_stable_tlm05u_catalog.rd_security_demo.fact_data_downloads d\n",
+          "JOIN serverless_stable_tlm05u_catalog.rd_security_demo.dim_employee e USING (employee_id)\n",
+          "WHERE d.is_flagged AND d.destination_type IN ('personal_cloud','usb')\n",
+          "  AND d.event_time >= date_sub(current_date(), 14)\n",
+          "GROUP BY e.name, e.team, e.is_contractor\n",
+          "ORDER BY total_bytes DESC\n",
+          "LIMIT 10"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "30000000000000000000000000000001",
+        "content": [
+          "ROLE: You are a security-investigation assistant for R&D / engineering insider-threat analysis. ",
+          "Help analysts find risky engineer behavior, explain which tables and columns you used, and give clear definitions.\n",
+          "TABLE GUIDE:\n",
+          "- mv_risk_behavior (metric view): governed access-risk KPIs by Employee, Team, Event Week/Date, Asset Sensitivity, Action. Prefer this for aggregated access-risk questions.\n",
+          "- mv_data_movement (metric view): governed data-egress KPIs by Employee, Team, Destination Type, Asset Sensitivity. Prefer this for download/exfiltration aggregates.\n",
+          "- fact_access_events: row-level access events (risk_score, action read/write/clone/export, is_after_hours, is_external_ip, source_ip).\n",
+          "- fact_data_downloads: row-level egress (bytes_downloaded, destination_type internal/personal_cloud/usb/email, is_flagged).\n",
+          "- fact_code_commits: commits with sensitive_files_touched and after-hours flag.\n",
+          "- dim_employee: employee attributes (team, role, is_contractor). dim_asset: assets with sensitivity_level (public<internal<confidential<restricted).\n",
+          "METRIC VIEWS: all measures MUST be wrapped in MEASURE(`Measure Name`) and you must GROUP BY the dimensions you select. Never SELECT * from a metric view.\n",
+          "DEFINITIONS: 'high risk' = risk_score >= 70. 'after hours' = is_after_hours = true (outside 07:00-20:00). 'exfiltration' / 'suspicious download' = is_flagged = true, usually destination_type in ('personal_cloud','usb').\n",
+          "TIME: 'this week' / 'recent' => filter event_time (or Event Date) >= date_sub(current_date(), 7). 'last two weeks' => 14 days. 'this month' => >= date_trunc('MONTH', current_date()).\n",
+          "When ranking risky people, prefer High Risk Event Count and Avg Risk Score, and surface is_contractor. Always briefly state which table/columns and definitions you used."
+        ]
+      }
+    ]
+  }
+}

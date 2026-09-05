@@ -1,0 +1,472 @@
+<title>Secure Statement Execution</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#f5f6f9; --surface:#ffffff; --surface-2:#eef1f6;
+    --ink:#131822; --muted:#59626f; --faint:#8a94a2; --line:#e2e6ee;
+    --accent:#33569e; --accent-soft:#e7edf8;
+    --obo:#0f9384; --obo-soft:#e0f4f1;
+    --risk:#c9721f; --risk-soft:#f8ecdc;
+    --shadow:0 1px 2px rgba(19,24,34,.06),0 8px 24px -12px rgba(19,24,34,.18);
+    --maxw:1120px;
+    --sans:"Inter",system-ui,-apple-system,sans-serif;
+    --display:"Archivo","Inter",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0c0f16; --surface:#141922; --surface-2:#1b2230;
+    --ink:#e8ecf3; --muted:#9aa4b3; --faint:#6b7585; --line:#262e3d;
+    --accent:#7b9bec; --accent-soft:#1c2740;
+    --obo:#2ec9b7; --obo-soft:#0f2b2a;
+    --risk:#e0a24f; --risk-soft:#2e2415;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.6);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0c0f16; --surface:#141922; --surface-2:#1b2230;
+    --ink:#e8ecf3; --muted:#9aa4b3; --faint:#6b7585; --line:#262e3d;
+    --accent:#7b9bec; --accent-soft:#1c2740;
+    --obo:#2ec9b7; --obo-soft:#0f2b2a;
+    --risk:#e0a24f; --risk-soft:#2e2415;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.65;-webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{padding:54px 0;border-top:1px solid var(--line)}
+  h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.15;text-wrap:balance;letter-spacing:-.01em}
+  h2{font-size:clamp(1.5rem,3.2vw,2.15rem);margin:0 0 10px}
+  h3{font-size:1.06rem;font-weight:700;margin:0 0 6px}
+  p{margin:0 0 12px;color:var(--muted)}
+  .lead{color:var(--ink);font-size:1.07rem;max-width:70ch}
+  code,.mono{font-family:var(--mono);font-size:.85em}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 14px;font-weight:500}
+  .accent{color:var(--accent)} .teal{color:var(--obo)} .amber{color:var(--risk)}
+  a{color:var(--accent)}
+
+  .hero{padding:72px 0 54px;border-top:none}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+  .badge{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;
+    padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
+  .hero h1{font-size:clamp(2.1rem,5.6vw,3.5rem);margin:0 0 18px}
+  .hero .thesis{font-size:clamp(1.05rem,2.2vw,1.28rem);color:var(--ink);max-width:66ch}
+  .thesis b{color:var(--accent);font-weight:700}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:36px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .stat .k{font-family:var(--display);font-weight:800;font-size:1.5rem;color:var(--accent);font-variant-numeric:tabular-nums}
+  .stat .l{font-size:.82rem;color:var(--muted);margin-top:2px}
+
+  .pull{background:var(--surface-2);border-radius:16px;padding:34px 32px;border:1px solid var(--line)}
+  .pull p{font-family:var(--display);font-weight:700;font-size:clamp(1.15rem,2.6vw,1.5rem);
+    color:var(--ink);line-height:1.4;margin:0}
+  .pull .em{color:var(--accent)} .pull .em2{color:var(--obo)}
+
+  .diagram{display:flex;flex-direction:column;gap:0;align-items:center;margin-top:8px}
+  .layer{width:100%;display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+  .node{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    box-shadow:var(--shadow);text-align:center;flex:1;min-width:170px;max-width:340px}
+  .node .t{font-weight:700;font-family:var(--display);font-size:.98rem}
+  .node .d{font-size:.8rem;color:var(--muted);margin-top:3px;line-height:1.4}
+  .node.app{border-color:var(--accent);background:var(--accent-soft);max-width:760px}
+  .node.uc{border-color:var(--obo);background:var(--obo-soft);max-width:760px}
+  .node.audit{max-width:760px;border-style:dashed}
+  .flowlabel{font-family:var(--mono);font-size:.72rem;color:var(--faint);padding:9px 0}
+  .arrow{color:var(--faint);font-size:1.1rem;line-height:1;padding:2px 0}
+  .obo-tag{display:inline-block;font-family:var(--mono);font-size:.66rem;color:var(--obo);
+    border:1px solid var(--obo);border-radius:6px;padding:1px 6px;margin-top:8px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
+  .card .tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .card h3{margin-top:6px}
+  .card p{font-size:.9rem;margin:0}
+  .card .why{margin-top:10px;font-size:.84rem;color:var(--ink);border-top:1px dashed var(--line);padding-top:10px}
+  .card .why b{color:var(--accent)}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .path{border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+  .path .head{padding:14px 18px;font-family:var(--display);font-weight:700;border-bottom:1px solid var(--line)}
+  .path.browser .head{background:var(--accent-soft);color:var(--accent)}
+  .path.api .head{background:var(--obo-soft);color:var(--obo)}
+  ol.mini{list-style:none;counter-reset:m;margin:0;padding:14px 18px;display:grid;gap:9px}
+  ol.mini li{counter-increment:m;position:relative;padding-left:26px;font-size:.9rem;color:var(--muted)}
+  ol.mini li::before{content:counter(m);position:absolute;left:0;top:1px;font-family:var(--mono);font-size:.7rem;
+    color:var(--faint);border:1px solid var(--line);border-radius:5px;width:18px;height:18px;display:grid;place-items:center}
+  ol.mini b{color:var(--ink)}
+
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:18px 0 0;display:grid;gap:12px}
+  ol.steps li{counter-increment:s;background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px 14px 54px;position:relative;box-shadow:var(--shadow)}
+  ol.steps li::before{content:counter(s);position:absolute;left:14px;top:14px;width:26px;height:26px;
+    border-radius:8px;background:var(--accent);color:#fff;font-family:var(--display);font-weight:800;
+    font-size:.9rem;display:grid;place-items:center}
+  ol.steps b{color:var(--ink)} ol.steps span{color:var(--muted);font-size:.9rem}
+
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+  .persona{border-radius:14px;padding:20px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+  .persona.analyst{border-top:3px solid var(--obo)} .persona.eng{border-top:3px solid var(--risk)}
+  .persona h3{display:flex;align-items:center;gap:8px} .persona .role{font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+  .kv{font-family:var(--mono);font-size:.82rem;margin:10px 0;padding:9px 11px;border-radius:8px;background:var(--surface-2);overflow-x:auto}
+  .kv .masked{color:var(--risk)} .kv .plain{color:var(--obo)}
+  .same-sql{font-family:var(--mono);font-size:.8rem;color:var(--muted);background:var(--surface-2);
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:6px;overflow-x:auto}
+
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
+  table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
+  table.tbl th,table.tbl td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.tbl tr:last-child td{border-bottom:none}
+  table.tbl th{color:var(--faint);font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
+  table.tbl td:first-child code, table.tbl td .obj{color:var(--accent);font-family:var(--mono);font-size:.82rem}
+  table.tbl td{color:var(--muted)} table.tbl td b{color:var(--ink)}
+  .pill{font-family:var(--mono);font-size:.66rem;padding:2px 7px;border-radius:6px;border:1px solid var(--line);color:var(--faint)}
+  .pill.get{color:var(--obo);border-color:var(--obo)} .pill.post{color:var(--accent);border-color:var(--accent)}
+
+  .values{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .value{padding:18px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+  .value .n{font-family:var(--mono);color:var(--accent);font-size:.8rem}
+  .value h3{margin:6px 0 4px;font-size:1rem} .value p{font-size:.86rem;margin:0}
+
+  footer{padding:34px 0 60px;color:var(--faint);font-size:.8rem;border-top:1px solid var(--line)}
+  @media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}.two,.compare{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion:no-preference){
+    .reveal{opacity:0;transform:translateY(12px);transition:opacity .6s ease,transform .6s ease}
+    .reveal.in{opacity:1;transform:none}
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="badges">
+      <span class="badge">On-Behalf-Of</span><span class="badge">Metric Views</span>
+      <span class="badge">Genie One</span><span class="badge">ABAC Governance</span><span class="badge">Lakebase</span>
+    </div>
+    <h1>Run every query as<br>the <span class="accent">actual user</span></h1>
+    <p class="thesis">The machine-to-machine Statement Execution API stays server-side. A
+      <b>Databricks App with On-Behalf-Of-User (OBO)</b> sits in front and runs every query as the
+      calling user — through the browser UI <i>and</i> a programmatic REST API on the same path. Unity
+      Catalog enforces grants, column masks, and row filters <b>per person</b>. Metric Views are the
+      governed semantic layer; Genie is the analyst's agent.</p>
+    <div class="stats">
+      <div class="stat"><div class="k">1 → N</div><div class="l">One shared identity → each real user</div></div>
+      <div class="stat"><div class="k">2</div><div class="l">Paths sharing one OBO engine (UI + API)</div></div>
+      <div class="stat"><div class="k">0</div><div class="l">Custom NL-to-SQL or audit systems to build</div></div>
+      <div class="stat"><div class="k">ABAC</div><div class="l">Tag-driven governance, per-user enforced</div></div>
+    </div>
+  </header>
+
+  <section class="reveal">
+    <p class="eyebrow">The problem</p>
+    <h2>A machine identity in front of a governed lakehouse erases the governance</h2>
+    <p class="lead">The Statement Execution API authenticates as a single service principal. Hand it directly
+      to end users and everyone shares that one identity — Unity Catalog can no longer tell people apart, and
+      grants, masks, and row filters stop meaning anything. What's needed is a service layer that lets each
+      user reach the data <b style="color:var(--ink)">as themselves</b>.</p>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">The core idea</p>
+    <div class="pull">
+      <p>A Databricks App enables <span class="em">OBO</span> and runs every query with the
+        <span class="em">caller's own token</span>. The browser UI and the public REST API share
+        <span class="em2">one execution engine</span> — the same SQL, run by different people, and Unity
+        Catalog decides what each of them sees.</p>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Architecture</p>
+    <h2>How data flows</h2>
+    <div class="diagram" role="img" aria-label="Architecture: users reach a Databricks App that runs queries under OBO against Statement Execution, Genie, and Lakebase, all governed by Unity Catalog">
+      <div class="layer">
+        <div class="node"><div class="t">User (browser SSO)</div><div class="d">App injects the user's OBO token</div></div>
+        <div class="node"><div class="t">Program / script (API caller)</div><div class="d">Presents its own Databricks token (per-user OAuth)</div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="layer">
+        <div class="node app">
+          <div class="t">Databricks App&nbsp;&nbsp;(FastAPI + React)</div>
+          <div class="d">Frontend: data explorer · Genie chat · SQL runner · copy-as-API&nbsp;&nbsp;|&nbsp;&nbsp;Backend: <code>/api/query</code> shared OBO engine · read-only guard</div>
+          <span class="obo-tag">every request = the caller's own identity</span>
+        </div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="layer">
+        <div class="node"><div class="t">Statement Execution API</div><div class="d">+ Serverless SQL Warehouse&nbsp;<span class="teal">(OBO)</span></div></div>
+        <div class="node"><div class="t">Genie One&nbsp;managed MCP</div><div class="d"><code>/api/2.0/mcp/genie</code> · workspace-wide · no table cap&nbsp;<span class="teal">(OBO)</span></div></div>
+        <div class="node"><div class="t">Lakebase&nbsp;(Postgres)</div><div class="d">query history · saved SQL · metric hot-cache</div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="layer">
+        <div class="node uc">
+          <div class="t">Unity Catalog</div>
+          <div class="d">Metric Views (semantic layer) · source tables · <b style="color:var(--obo)">ABAC: grants / column masks / row filters — enforced per user</b></div>
+        </div>
+      </div>
+      <div class="flowlabel">└ audit, after the fact (~10-min lag) ┘</div>
+      <div class="layer">
+        <div class="node audit"><div class="t">system.query.history · system.access.audit</div><div class="d">Because queries run under OBO, they are attributed to the real user automatically</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Request lifecycle</p>
+    <h2>Two entry points, one governed engine</h2>
+    <p class="lead">Whether a request arrives from the browser or from a script, the backend resolves the
+      caller's identity, then executes with <i>that</i> token. Nothing runs as a shared service principal.</p>
+    <div class="two">
+      <div class="path browser">
+        <div class="head">Browser (UI)</div>
+        <ol class="mini">
+          <li>User signs in to the App with workspace SSO.</li>
+          <li>Databricks Apps injects <b>X-Forwarded-Access-Token</b> — a scoped OBO token for that user.</li>
+          <li>Backend reads the token and calls Statement Execution / Genie <b>as the user</b>.</li>
+          <li>Unity Catalog applies that user's grants, masks, and row filters.</li>
+        </ol>
+      </div>
+      <div class="path api">
+        <div class="head">Program (REST API)</div>
+        <ol class="mini">
+          <li>Caller obtains their own Databricks token (per-user OAuth).</li>
+          <li>Calls <code>POST /api/query</code> with <b>Authorization: Bearer &lt;token&gt;</b>.</li>
+          <li>Backend uses that token on the <b>same</b> execution path as the UI.</li>
+          <li>Same governance applies — masking and filtering are identical.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Components</p>
+    <h2>Built from managed services, not custom code</h2>
+    <div class="grid">
+      <div class="card"><div class="tag">Semantic layer</div><h3>Unity Catalog Metric Views</h3>
+        <p>Two governed views — <code>mv_risk_behavior</code> and <code>mv_data_movement</code> — define
+          measures (high-risk event count, average risk score, egress volume) once in YAML, with joins declared
+          in the definition. SQL, Genie, and dashboards all consume the same definitions.</p>
+        <div class="why"><b>Role:</b> the headless semantic layer, native to Databricks and governed by Unity Catalog by construction.</div></div>
+      <div class="card"><div class="tag">Agent</div><h3>Genie One (managed MCP)</h3>
+        <p>The app calls <code>/api/2.0/mcp/genie</code> — workspace-wide, with no space and no table limit. A
+          question returns a narrative answer, the tables and columns used, and a suggested SQL statement.</p>
+        <div class="why"><b>Role:</b> new metric views become answerable the moment a user has access to them; every call runs under the user's identity.</div></div>
+      <div class="card"><div class="tag">Serving layer</div><h3>Databricks App (FastAPI + React)</h3>
+        <p>A data explorer, a Genie chat, a SQL runner with "copy as API call", and a query history. The UI's
+          Run button and the public <code>/api/query</code> share one OBO execution module.</p>
+        <div class="why"><b>Role:</b> the SQL a user sees in the UI behaves identically when copied out and called over the API.</div></div>
+      <div class="card"><div class="tag">Governance</div><h3>ABAC policies + governed tags</h3>
+        <p>Columns carry governed tags (e.g. <code>data_classification=pii</code>). A single schema-level policy
+          masks every tagged column; another filters rows by sensitivity — automatically, including on future tables.</p>
+        <div class="why"><b>Role:</b> governance follows the data classification, not a hand-maintained per-table rule set.</div></div>
+      <div class="card"><div class="tag">App store &amp; cache</div><h3>Lakebase (Postgres)</h3>
+        <p>Real-time query history and saved queries, plus a pre-aggregated metric hot-cache served from Postgres
+          at low latency (the equivalent of a Cube pre-aggregation).</p>
+        <div class="why"><b>Role:</b> instant, per-user operational state that complements the authoritative — but lagging — system tables.</div></div>
+      <div class="card"><div class="tag">Audit</div><h3>System tables</h3>
+        <p><code>system.query.history</code> and <code>system.access.audit</code> record who ran which statement,
+          as which identity, with what result.</p>
+        <div class="why"><b>Role:</b> because everything runs under OBO, the audit trail is attributed to real users with no extra plumbing.</div></div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Identity &amp; execution</p>
+    <h2>One execution path, guarded</h2>
+    <p class="lead">The backend resolves identity in a fixed order and then never deviates from it: a
+      browser OBO token, an API caller's bearer token. That token is passed verbatim to Statement Execution and
+      to Genie, so Unity Catalog does the enforcing — the app does not re-implement access control.</p>
+    <div class="grid" style="margin-top:8px">
+      <div class="card"><div class="tag">Shared engine</div><h3>UI &amp; API converge</h3>
+        <p>Both the Run button and <code>/api/query</code> call the same function. Results, row counts, and
+          governance are guaranteed consistent between the two surfaces.</p></div>
+      <div class="card"><div class="tag">Safety</div><h3>Read-only by default</h3>
+        <p>The query endpoint accepts only read statements (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN); anything
+          that would modify data is rejected before execution.</p></div>
+      <div class="card"><div class="tag">Serverless</div><h3>Statement Execution API</h3>
+        <p>Queries run on a serverless SQL warehouse via the Statement Execution API, returning column schema and
+          rows — bounded by a configurable row limit.</p></div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Governance · the crux</p>
+    <h2>The same SQL, different people, different results</h2>
+    <p class="lead">Governance is enforced by Unity Catalog <b style="color:var(--ink)">at execution time</b>, not
+      by the application. OBO establishes <i>who you are</i>; ABAC and governed tags decide <i>what you may see</i>.</p>
+    <div class="same-sql">SELECT email, source_ip, risk_score FROM &lt;schema&gt;.fact_access_events …&nbsp;&nbsp;<span style="color:var(--faint)">← both users run the exact same SQL</span></div>
+    <div class="compare">
+      <div class="persona analyst"><h3>🛡️ Security analyst <span class="role">exempted principal</span></h3>
+        <div class="kv">email → <span class="plain">casey.johnson@northpeak.com</span></div>
+        <div class="kv">source_ip → <span class="plain">10.24.9.13</span>&nbsp;&nbsp;·&nbsp;&nbsp;restricted-asset rows → <span class="plain">visible</span></div>
+        <p style="font-size:.86rem;margin:0">Exempted by the policy's <code>EXCEPT</code> clause → sees plaintext and all rows.</p></div>
+      <div class="persona eng"><h3>👤 Regular engineer <span class="role">everyone else</span></h3>
+        <div class="kv">email → <span class="masked">***masked***</span></div>
+        <div class="kv">source_ip → <span class="masked">***masked***</span>&nbsp;&nbsp;·&nbsp;&nbsp;restricted-asset rows → <span class="masked">hidden</span></div>
+        <p style="font-size:.86rem;margin:0">Column mask hides PII; row filter removes restricted-asset rows.</p></div>
+    </div>
+    <p style="margin-top:16px;font-size:.92rem">The persona is chosen by the policy's
+      <code>TO account users EXCEPT &lt;principal&gt;</code> (an account group in production). A policy matches
+      columns by governed tag — <code>has_tag_value('data_classification','pii')</code> for masking — so any
+      newly-tagged column, on any table, is covered without editing the policy. <b style="color:var(--ink)">The API path
+      is bound by the exact same policies</b>: copy the SQL out, call it with a token, and it is masked and filtered identically.</p>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Semantic layer</p>
+    <h2>Metric Views define the numbers once</h2>
+    <p class="lead">Each metric view separates dimensions (how you slice) from measures (what you aggregate), and
+      declares its joins internally. Consumers select dimensions and wrap measures in <code>MEASURE()</code> — the
+      aggregation logic lives in one governed place.</p>
+    <div class="tbl-wrap" style="margin-top:8px">
+      <table class="tbl">
+        <thead><tr><th>Metric view</th><th>Grain</th><th>Dimensions</th><th>Measures</th></tr></thead>
+        <tbody>
+          <tr><td><span class="obj">mv_risk_behavior</span></td><td>access event</td>
+            <td>Employee, Team, Event Week/Date, Asset Sensitivity, Action, Is Contractor</td>
+            <td>Access Event Count, <b>High Risk Event Count</b>, After-Hours Access Count, External-IP Access Count, Avg Risk Score, Distinct Assets Accessed</td></tr>
+          <tr><td><span class="obj">mv_data_movement</span></td><td>download</td>
+            <td>Employee, Team, Event Week, Destination Type, Asset Sensitivity</td>
+            <td>Download Count, Total Bytes Downloaded, <b>Flagged Download Count</b>, Sensitive Bytes Downloaded</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">The agent</p>
+    <h2>Genie, governed and un-capped</h2>
+    <div class="two">
+      <div>
+        <p class="lead">The app talks to the Genie One managed MCP server with the user's OBO token. A question
+          flows through three calls, and the app surfaces the answer plus a runnable SQL statement.</p>
+        <ol class="mini" style="padding-left:0">
+          <li><b>genie_ask</b> — submit the question; returns a conversation id.</li>
+          <li><b>genie_poll</b> — poll until complete; returns a markdown answer, a deep link, and any query items.</li>
+          <li><b>genie_get_query_result</b> — fetch the full rows for a query the agent ran.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <div class="tag">Why workspace-wide MCP</div>
+        <h3>No curation ceiling</h3>
+        <p>A curated Genie space caps at 30 tables and must be maintained by hand. The managed MCP endpoint has no
+          space and no cap: any table or metric view a user is entitled to becomes answerable automatically — and it
+          answers strictly within that user's Unity Catalog permissions.</p>
+        <div class="why"><b>Also kept:</b> a curated space as a "certified" high-guidance path for the blessed metrics.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Operational store &amp; cache</p>
+    <h2>Lakebase for what system tables can't do live</h2>
+    <div class="two">
+      <div class="card"><div class="tag">Operational store</div><h3>Real-time history &amp; saved SQL</h3>
+        <p>Every query run through the app is logged to Postgres immediately and shown in the user's history —
+          without the ~10-minute lag of system tables. Users can also save Genie-suggested statements.</p></div>
+      <div class="card"><div class="tag">Cache</div><h3>Metric hot-cache</h3>
+        <p>A pre-aggregated daily rollup is materialized into Postgres and served at low latency — the Cube
+          pre-aggregation pattern. It can be refreshed on a schedule, or maintained automatically by a managed
+          Lakebase synced table backed by a declarative pipeline.</p></div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">API surface</p>
+    <h2>What the backend exposes</h2>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>/api/query</code></td><td><span class="pill post">POST</span></td><td><b>The core.</b> Execute a read-only SQL statement under OBO; returns columns + rows. Shared by the UI and external callers.</td></tr>
+          <tr><td><code>/api/objects</code></td><td><span class="pill get">GET</span></td><td>List the tables and metric views the user can see, with descriptions.</td></tr>
+          <tr><td><code>/api/objects/{name}</code></td><td><span class="pill get">GET</span></td><td>Columns for one object, with types, comments, and governed tags.</td></tr>
+          <tr><td><code>/api/genie/ask</code></td><td><span class="pill post">POST</span></td><td>Ask Genie One a natural-language question (OBO).</td></tr>
+          <tr><td><code>/api/genie/poll</code></td><td><span class="pill get">GET</span></td><td>Poll a Genie response for the answer, deep link, and suggested SQL.</td></tr>
+          <tr><td><code>/api/history</code></td><td><span class="pill get">GET</span></td><td>The user's recent queries, from Lakebase (real-time).</td></tr>
+          <tr><td><code>/api/saved</code></td><td><span class="pill get">GET</span> <span class="pill post">POST</span></td><td>List or save starred SQL statements.</td></tr>
+          <tr><td><code>/api/hotcache</code></td><td><span class="pill get">GET</span></td><td>Top-risk list served from the Lakebase pre-aggregation cache.</td></tr>
+          <tr><td><code>/api/me</code></td><td><span class="pill get">GET</span></td><td>The caller's identity and the app's catalog / schema / warehouse context.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Data model &amp; scenario</p>
+    <h2>An insider data-exfiltration investigation</h2>
+    <p class="lead">Roughly 340,000 synthetic engineering-activity events model a realistic security scenario. Six
+      Platform-team engineers (two of them contractors) show a two-week spike of risky behavior — after-hours access
+      to restricted repositories, clone/export actions, and large downloads to personal cloud and USB.</p>
+    <div class="tbl-wrap" style="margin:8px 0 20px">
+      <table class="tbl">
+        <thead><tr><th>Object</th><th>Rows</th><th>What it holds</th></tr></thead>
+        <tbody>
+          <tr><td><span class="obj">dim_employee</span></td><td>500</td><td>Engineers — team, role, level, contractor flag.</td></tr>
+          <tr><td><span class="obj">dim_asset</span></td><td>200</td><td>Repos / databases / datasets / services, with a sensitivity level.</td></tr>
+          <tr><td><span class="obj">fact_access_events</span></td><td>200,000</td><td>Access events with a per-event risk score, after-hours and external-IP flags.</td></tr>
+          <tr><td><span class="obj">fact_code_commits</span></td><td>80,000</td><td>Commits, including sensitive files touched and after-hours flag.</td></tr>
+          <tr><td><span class="obj">fact_data_downloads</span></td><td>40,000</td><td>Egress events — destination, bytes, flagged status.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pull" style="background:var(--risk-soft);border-color:var(--risk)">
+      <p style="color:var(--ink)">The driving question — <span class="amber">"which engineers showed high-risk behavior this week?"</span>
+        — resolves cleanly to those six, with a sharp drop-off to everyone else.</p>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Walkthrough</p>
+    <h2>What a user does</h2>
+    <ol class="steps">
+      <li><b>Explore</b>&nbsp;&nbsp;<span>Open the app and browse the tables and metric views you have access to, with column descriptions and governed tags.</span></li>
+      <li><b>Ask Genie</b>&nbsp;&nbsp;<span>Type "which engineers were high-risk this week"; Genie explains the tables, columns, and definitions and returns a suggested SQL statement.</span></li>
+      <li><b>Run the SQL</b>&nbsp;&nbsp;<span>Send it to the SQL runner and execute as yourself (OBO); the result footer shows it ran as you.</span></li>
+      <li><b>Copy as an API call</b>&nbsp;&nbsp;<span>Grab a curl or Python snippet and call <code>/api/query</code> directly with your own token — governance is identical.</span></li>
+      <li><b>Switch persona</b>&nbsp;&nbsp;<span>Re-run the same SQL as a regular engineer — PII is masked and restricted rows disappear.</span></li>
+      <li><b>Review the audit</b>&nbsp;&nbsp;<span>See the query attributed to the real user in <code>system.query.history</code>.</span></li>
+    </ol>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Delivery</p>
+    <h2>One-command deploy, one-command verify</h2>
+    <div class="grid">
+      <div class="card"><div class="tag">Deploy</div><h3>Asset Bundle + bootstrap</h3>
+        <p>A Databricks Asset Bundle deploys the App with its OBO scopes; a bootstrap script provisions the pieces
+          the bundle doesn't — Lakebase, governed data, the Genie space, and the hot-cache. The workspace host comes
+          from the CLI profile, so the same project deploys anywhere.</p></div>
+      <div class="card"><div class="tag">Verify</div><h3>Acceptance test</h3>
+        <p>A single test run checks the data, ABAC governance, metric views, Genie, the app API under OBO, Lakebase,
+          and the audit source — so a fresh deployment can be validated in one command.</p></div>
+      <div class="card"><div class="tag">Document</div><h3>Runbooks</h3>
+        <p>A deployment guide (prerequisites, configuration, audit queries, teardown) and a demo guide (the
+          walkthrough and talk-track) ship with the project.</p></div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <p class="eyebrow">Why it matters</p>
+    <h2>What this delivers</h2>
+    <div class="values">
+      <div class="value"><div class="n">01</div><h3>Secure</h3><p>The M2M API stays server-side; users on both the UI and the API query as themselves, and governance is enforced per person.</p></div>
+      <div class="value"><div class="n">02</div><h3>Modern governance</h3><p>ABAC plus governed tags bring new tables under policy automatically; Metric Views replace an external semantic layer.</p></div>
+      <div class="value"><div class="n">03</div><h3>Great experience</h3><p>Natural language → suggested SQL → run or copy-to-API, end to end.</p></div>
+      <div class="value"><div class="n">04</div><h3>Complete</h3><p>Real-time operational state (Lakebase) alongside the authoritative audit (system tables) and a low-latency cache.</p></div>
+      <div class="value"><div class="n">05</div><h3>Portable</h3><p>One-command deploy and one-command verification reproduce the whole solution in any workspace.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    RD Security Investigation — Secure Statement Execution reference architecture&nbsp;·&nbsp;Databricks Apps · OBO · Unity Catalog ABAC · Metric Views · Genie One · Lakebase
+  </footer>
+</div>
+
+<script>
+  const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target);}})},{threshold:.1});
+  document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
+</script>
