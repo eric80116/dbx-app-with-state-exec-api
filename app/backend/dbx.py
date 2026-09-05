@@ -166,31 +166,110 @@ def _content_text(result: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def genie_ask(token: str, question: str, conversation_id: str | None = None) -> dict[str, Any]:
-    args: dict[str, Any] = {"question": question}
+# Positioning: bias every ask toward "which tables/columns + a reference SQL statement".
+_PREAMBLE = ("For the analysis below, recommend which tables and columns to use and provide a "
+             "reference SQL statement, then briefly answer. Analysis: ")
+
+
+def _norm_status(s: Any) -> str:
+    s = str(s or "").lower()
+    if s in ("completed", "complete", "succeeded", "success"):
+        return "completed"
+    if s in ("failed", "error", "cancelled", "canceled"):
+        return "failed"
+    return "in_progress"
+
+
+def _use_space(scope: str) -> str:
+    """Return a space_id to route to the curated Genie space, or '' for workspace-wide Genie One."""
+    return config.GENIE_SPACE_ID if (scope == "security" and config.GENIE_SPACE_ID) else ""
+
+
+def _flatten_rows(data: Any) -> list:
+    """Coerce Genie result rows to plain string arrays [[v, ...]] regardless of source format
+    (Statement Execution data_array is already [[...]]; Genie returns [{values:[{string_value:v}]}])."""
+    out = []
+    for row in data or []:
+        if isinstance(row, list):
+            out.append(row)
+        elif isinstance(row, dict) and "values" in row:
+            out.append([(next(iter(v.values())) if isinstance(v, dict) else v) for v in row["values"]])
+        else:
+            out.append(row)
+    return out
+
+
+def genie_ask(token: str, question: str, conversation_id: str | None = None,
+              scope: str = "security") -> dict[str, Any]:
+    """scope='security' -> curated Genie space (fast, scoped); 'workspace' -> Genie One (broad)."""
+    q = _PREAMBLE + question
+    sid = _use_space(scope)
+    if sid:  # curated space MCP: query_space_<id> / poll_response_<id>
+        args: dict[str, Any] = {"query": q}
+        if conversation_id:
+            args["conversation_id"] = conversation_id
+        res = _mcp_call(token, f"query_space_{sid}", args, path=f"{_MCP_GENIE_ONE}/{sid}")
+        sc = res.get("structuredContent", {}) or {}
+        return {"conversation_id": sc.get("conversationId"), "response_id": sc.get("messageId"),
+                "status": _norm_status(sc.get("status")), "scope": "security"}
+    args = {"question": q}
     if conversation_id:
         args["conversation_id"] = conversation_id
     res = _mcp_call(token, "genie_ask", args)
     sc = res.get("structuredContent", {}) or {}
-    return {"conversation_id": sc.get("conversation_id"),
-            "response_id": sc.get("response_id"),
-            "status": sc.get("status")}
+    return {"conversation_id": sc.get("conversation_id"), "response_id": sc.get("response_id"),
+            "status": _norm_status(sc.get("status")), "scope": "workspace"}
 
 
-def genie_poll(token: str, conversation_id: str, response_id: str) -> dict[str, Any]:
+def genie_poll(token: str, conversation_id: str, response_id: str,
+               scope: str = "security") -> dict[str, Any]:
+    """Normalized result: {status, final_answer, deep_link, query_items[{sql}], progress_steps,
+    columns, rows}. Result rows are included when available so the UI can chart the answer."""
+    sid = _use_space(scope)
+    if sid:
+        res = _mcp_call(token, f"poll_response_{sid}",
+                        {"conversation_id": conversation_id, "message_id": response_id},
+                        path=f"{_MCP_GENIE_ONE}/{sid}")
+        sc = res.get("structuredContent", {}) or {}
+        content = sc.get("content", {}) or {}
+        texts = content.get("textAttachments") or []
+        qas = content.get("queryAttachments") or []
+        query_items, columns, rows = [], None, None
+        for i, qa in enumerate(qas):
+            query_items.append({"item_id": str(i), "sql": qa.get("query")})
+            sr = qa.get("statement_response") or {}
+            man, r = sr.get("manifest") or {}, sr.get("result") or {}
+            if man.get("schema"):
+                columns = [{"name": c["name"], "type": c.get("type_text")}
+                           for c in man["schema"].get("columns", [])]
+            if r.get("data_array") is not None:
+                rows = _flatten_rows(r["data_array"])
+        return {"status": _norm_status(sc.get("status")),
+                "final_answer": "\n\n".join(t for t in texts if t) or None,
+                "deep_link": None, "query_items": query_items,
+                "progress_steps": [], "columns": columns, "rows": rows}
+
+    # Genie One
     res = _mcp_call(token, "genie_poll_response",
                     {"conversation_id": conversation_id, "response_id": response_id})
     sc = res.get("structuredContent", {}) or {}
-    return {
-        "status": sc.get("status"),
-        "final_answer": sc.get("final_answer"),
-        "deep_link": sc.get("deep_link"),
-        # each query item = {item_id, sql}; the last is usually the real answer query
-        "query_items": sc.get("query_items", []),
-    }
-
-
-def genie_get_result(token: str, conversation_id: str, response_id: str, item_id: str) -> dict[str, Any]:
-    res = _mcp_call(token, "genie_get_query_result",
-                    {"conversation_id": conversation_id, "response_id": response_id, "item_id": item_id})
-    return {"text": _content_text(res), "structured": res.get("structuredContent", {}) or {}}
+    out = {"status": _norm_status(sc.get("status")), "final_answer": sc.get("final_answer"),
+           "deep_link": sc.get("deep_link"), "query_items": sc.get("query_items", []),
+           "progress_steps": sc.get("progress_steps", []), "columns": None, "rows": None}
+    # fetch rows for the last query item so the UI can chart the answer
+    if out["status"] == "completed" and out["query_items"]:
+        try:
+            item_id = out["query_items"][-1].get("item_id")
+            gr = _mcp_call(token, "genie_get_query_result",
+                           {"conversation_id": conversation_id, "response_id": response_id, "item_id": item_id})
+            grsc = gr.get("structuredContent", {}) or {}
+            sr = grsc.get("statement_response") or grsc
+            man, r = sr.get("manifest") or {}, sr.get("result") or {}
+            if man.get("schema"):
+                out["columns"] = [{"name": c["name"], "type": c.get("type_text")}
+                                  for c in man["schema"].get("columns", [])]
+            if r.get("data_array") is not None:
+                out["rows"] = _flatten_rows(r["data_array"])
+        except Exception:
+            pass
+    return out

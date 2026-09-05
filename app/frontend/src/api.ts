@@ -13,10 +13,14 @@ export interface QueryResult {
   statement_id: string; executed_as?: string;
 }
 export interface QueryItem { item_id: string; sql: string; }
-export interface GenieAsk { conversation_id: string; response_id: string; status: string; }
+export interface GenieAsk { conversation_id: string; response_id: string; status: string; scope: string; }
 export interface GeniePoll {
   status: string; final_answer: string | null; deep_link: string | null; query_items: QueryItem[];
+  progress_steps?: string[];
+  columns?: { name: string; type: string }[] | null;
+  rows?: string[][] | null;
 }
+export type GenieScope = "security" | "workspace";
 export interface HistoryRow { sql: string; source: string; row_count: number | null; status: string; statement_id: string | null; created_at: string; }
 export interface SavedRow { id: number; title: string; sql: string; created_at: string; }
 
@@ -35,10 +39,11 @@ export const api = {
   describe: (name: string) => fetch(`/api/objects/${encodeURIComponent(name)}`).then(j<{ name: string; columns: Column[] }>),
   query: (sql: string) =>
     fetch("/api/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql }) }).then(j<QueryResult>),
-  genieAsk: (question: string, conversation_id?: string) =>
-    fetch("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, conversation_id }) }).then(j<GenieAsk>),
-  geniePoll: (conversation_id: string, response_id: string) =>
-    fetch(`/api/genie/poll?conversation_id=${conversation_id}&response_id=${response_id}`).then(j<GeniePoll>),
+  genieAsk: (question: string, scope: GenieScope, conversation_id?: string) =>
+    fetch("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, scope, conversation_id }) }).then(j<GenieAsk>),
+  geniePoll: (conversation_id: string, response_id: string, scope: GenieScope) =>
+    fetch(`/api/genie/poll?conversation_id=${conversation_id}&response_id=${response_id}&scope=${scope}`).then(j<GeniePoll>),
+  token: () => fetch("/api/token").then(j<{ token: string; email: string; note: string }>),
   history: () => fetch("/api/history").then(j<{ history: HistoryRow[]; lakebase: boolean }>),
   savedList: () => fetch("/api/saved").then(j<{ saved: SavedRow[]; lakebase: boolean }>),
   save: (title: string, sql: string) =>

@@ -37,6 +37,7 @@ class QueryIn(BaseModel):
 class AskIn(BaseModel):
     question: str
     conversation_id: str | None = None
+    scope: str = "security"   # "security" = curated Genie space (fast); "workspace" = Genie One (broad)
 
 
 class SaveIn(BaseModel):
@@ -121,19 +122,23 @@ def hotcache(request: Request, days: int = 7, limit: int = 10):
 @app.post("/api/genie/ask")
 def genie_ask(request: Request, body: AskIn):
     ident = auth.get_identity(request)
-    return dbx.genie_ask(ident.token, body.question, body.conversation_id)
+    return dbx.genie_ask(ident.token, body.question, body.conversation_id, body.scope)
 
 
 @app.get("/api/genie/poll")
-def genie_poll(request: Request, conversation_id: str, response_id: str):
+def genie_poll(request: Request, conversation_id: str, response_id: str, scope: str = "security"):
     ident = auth.get_identity(request)
-    return dbx.genie_poll(ident.token, conversation_id, response_id)
+    return dbx.genie_poll(ident.token, conversation_id, response_id, scope)
 
 
-@app.get("/api/genie/result")
-def genie_result(request: Request, conversation_id: str, response_id: str, item_id: str):
+@app.get("/api/token")
+def token(request: Request):
+    """Return the caller's OWN short-lived access token so a copied API snippet is runnable
+    without hunting for a token. It is the caller's own OBO/bearer token — returning it to its
+    owner grants no new access; it is short-lived and scoped to this app's user authorization."""
     ident = auth.get_identity(request)
-    return dbx.genie_get_result(ident.token, conversation_id, response_id, item_id)
+    return {"token": ident.token, "email": ident.email,
+            "note": "short-lived; your own token, scoped to this app's OBO scopes"}
 
 
 # --- static SPA (built React app) -------------------------------------------
