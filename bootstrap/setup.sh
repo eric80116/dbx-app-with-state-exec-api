@@ -258,7 +258,8 @@ if databricks apps get "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 \
   databricks bundle destroy -t dev --auto-approve --profile "$PROFILE" \
     --var app_name="$APP_NAME" --var warehouse_id="$WAREHOUSE_ID" >/dev/null 2>&1 || true
   databricks apps delete "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
-  sleep 5
+  # deletion is async — WAIT until the app is actually gone, else create fails 409 ALREADY_EXISTS
+  for _ in $(seq 1 30); do databricks apps get "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || break; sleep 4; done
 fi
 databricks bundle deploy -t dev --profile "$PROFILE" --var app_name="$APP_NAME" --var warehouse_id="$WAREHOUSE_ID" || die "bundle deploy failed"
 say "Start the App (bundle run deploys code AND starts compute)"

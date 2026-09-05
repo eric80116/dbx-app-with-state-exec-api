@@ -263,13 +263,11 @@ def genie_poll(token: str, conversation_id: str, response_id: str,
             gr = _mcp_call(token, "genie_get_query_result",
                            {"conversation_id": conversation_id, "response_id": response_id, "item_id": item_id})
             grsc = gr.get("structuredContent", {}) or {}
-            sr = grsc.get("statement_response") or grsc
-            man, r = sr.get("manifest") or {}, sr.get("result") or {}
-            if man.get("schema"):
-                out["columns"] = [{"name": c["name"], "type": c.get("type_text")}
-                                  for c in man["schema"].get("columns", [])]
-            if r.get("data_array") is not None:
-                out["rows"] = _flatten_rows(r["data_array"])
+            # genie_get_query_result returns top-level columns[{name,type_text}] + rows[[...]]
+            if grsc.get("columns"):
+                out["columns"] = [{"name": c["name"], "type": c.get("type_text")} for c in grsc["columns"]]
+            if grsc.get("rows") is not None:
+                out["rows"] = _flatten_rows(grsc["rows"])
         except Exception:
             pass
     return out
