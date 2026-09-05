@@ -37,12 +37,16 @@ settings, then asks you to confirm before making any changes.
 
 ## Layout
 ```
-data/       synthetic data + metadata/metric-views/ABAC (databricks-connect)
-bootstrap/  setup.sh (deploy), genie_agent.json, refresh_hotcache.py
-app/        FastAPI backend (backend/) + React frontend (frontend/) + app.yaml
-tests/      pytest acceptance suite   ·   run_tests.sh (top level)
-docs/       DEPLOYMENT.md, DEMO_GUIDE.md   ·   databricks.yml (DAB)
+data/          synthetic data gen + metadata/tags/ABAC governance (databricks-connect)
+metric_views/  the governed metric views as YAML (mv_risk_behavior, mv_data_movement)
+bootstrap/     setup.sh (deploy), teardown.sh, genie_agent.json, refresh_hotcache.py
+app/           FastAPI backend (backend/) + React frontend (frontend/) + app.yaml.example
+tests/         pytest acceptance suite   ·   run_tests.sh (top level)
+docs/          DEPLOYMENT.md, DEMO_GUIDE.md, architecture_explainer.html
+databricks.yml DAB (deploys the App)
 ```
+Metric views are defined once in `metric_views/*.yaml` (with a `{{FQ}}` placeholder for
+`<catalog>.<schema>`) and applied by `data/apply_metadata_and_governance.py`.
 
 ## Notes
 - Governance uses ABAC + **governed tags** (`data_classification`, `gov_sensitivity`) — these
