@@ -149,15 +149,20 @@ fi
 
 # --------------------------------------------------------------- 2. Lakebase
 say "Lakebase project ($LB_PROJECT)"
-databricks postgres list-projects --profile "$PROFILE" -o json 2>/dev/null \
-  | python3 -c "import sys,json;exit(0 if any(p['project_id']=='$LB_PROJECT' for p in json.load(sys.stdin)) else 1)" \
-  || databricks postgres create-project "$LB_PROJECT" --json "{\"spec\":{\"display_name\":\"$LB_PROJECT\"}}" --profile "$PROFILE"
-for i in $(seq 1 20); do
+if ! databricks postgres list-projects --profile "$PROFILE" -o json 2>/dev/null \
+     | python3 -c "import sys,json;d=json.load(sys.stdin);exit(0 if any(p['project_id']=='$LB_PROJECT' for p in (d if isinstance(d,list) else d.get('projects',[]))) else 1)"; then
+  # NOTE: recreating a project whose name was JUST deleted can be rejected/slow while the old
+  # name is still freeing up. If you just tore down, wait a few minutes or use --lakebase-project.
+  databricks postgres create-project "$LB_PROJECT" --json "{\"spec\":{\"display_name\":\"$LB_PROJECT\"}}" --profile "$PROFILE" \
+    || die "could not create Lakebase project '$LB_PROJECT' (if you just deleted one with this name, wait for the name to free up or pass --lakebase-project <new>)"
+fi
+# endpoint provisioning can take several minutes on a brand-new project
+for i in $(seq 1 40); do
   LB_HOST="$(databricks postgres get-endpoint "$LB_ENDPOINT" --profile "$PROFILE" -o json 2>/dev/null \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",{}).get("hosts",{}).get("host",""))' 2>/dev/null)"
-  [[ -n "$LB_HOST" ]] && break; echo "  waiting for Lakebase endpoint..."; sleep 15
+  [[ -n "$LB_HOST" ]] && break; echo "  waiting for Lakebase endpoint... ($i/40)"; sleep 15
 done
-[[ -z "$LB_HOST" ]] && die "Lakebase endpoint not ready"
+[[ -z "$LB_HOST" ]] && die "Lakebase endpoint not ready after ~10 min — check 'databricks postgres list-projects'"
 echo "  lakebase host: $LB_HOST"
 
 # --------------------------------------------------------------- 4. Genie space

@@ -257,3 +257,17 @@ bootstrap/teardown.sh --profile <p> --catalog <c> --drop-catalog --drop-tag --ye
 `--drop-catalog` and `--drop-tag` are **off by default** — the catalog may hold other data, and
 the governed tag is account-level (deleting it needs account-admin). Options mirror `setup.sh`
 (`--schema`, `--app-name`, `--lakebase-project`, `--tag-key`).
+
+**Always verify the teardown** (cost-critical — leftover App or Lakebase compute keeps billing):
+```bash
+./verify_teardown.sh --profile <p> --catalog <c> [--dropped-catalog] [--dropped-tag]
+```
+It asserts every resource is gone — App, Lakebase project + endpoint, Genie space, Lakebase UC
+catalog, demo schema (and the catalog + governed tag if you dropped them). Pass `--dropped-catalog`
+/ `--dropped-tag` only if you ran teardown with those flags. Expect all checks to pass.
+
+> **Note:** the Lakebase-registered catalog is a `MANAGED_ONLINE_CATALOG` — teardown removes it
+> with `databricks postgres delete-catalog catalogs/<name>` (not `catalogs delete`), and waits for
+> the App's async deletion to finish. **Re-deploying immediately after a teardown** can be slow or
+> rejected if you reuse the **same Lakebase project name** (the deleted name takes a few minutes to
+> free up) — wait, or pass a different `--lakebase-project`.
