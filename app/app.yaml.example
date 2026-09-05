@@ -22,5 +22,3 @@ env:
     value: "databricks_postgres"
   - name: LAKEBASE_SCHEMA
     value: "app_ops"
-  - name: LAKEBASE_HOTCACHE_TABLE
-    value: "public.mv_risk_behavior_daily"   # or app_ops.metric_hot_cache (manual refresh)

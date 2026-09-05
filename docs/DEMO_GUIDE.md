@@ -85,11 +85,10 @@ CREATE OR REPLACE POLICY rd_mask_pii ON SCHEMA <cat>.rd_security_demo
 **Say:** "One central ABAC policy, driven by governed tags — it covers every tagged column,
 including tables you add later. In production the exemption is an account group, not a person."
 
-### 5. Lakebase — real-time history + a fast cache
+### 5. Lakebase — real-time operational store
 - Open **History**: your recent queries appear **instantly** (Lakebase), unlike system tables.
-- **Say:** "Lakebase is the app's operational store — query history, saved queries — and a
-  **pre-aggregation hot-cache** (`/api/hotcache`) that serves the top-risk list from Postgres in
-  milliseconds. That's the Cube pre-aggregation idea, on Databricks."
+- **Say:** "Lakebase is the app's operational store — real-time query history and saved queries —
+  the low-latency per-user state that doesn't belong in (and would lag in) system tables."
 
 ### 6. Audit trail — governance closes the loop
 - **Say:** "Because everything ran under OBO, the authoritative audit is automatic in system
@@ -115,6 +114,5 @@ ORDER BY start_time DESC;
   API story stands on its own); Genie latency is model-side.
 - **Genie returns no Suggested SQL block** → the answer + table are still in the reply; open the
   *Open in Databricks* link to show the query.
-- **Hot-cache empty** → run `bootstrap/refresh_hotcache.py`; the SQL Runner path is unaffected.
 - **Masked view not toggling** → confirm you edited the right policy and refreshed; re-run the
   RESTORE statement to return to analyst view.

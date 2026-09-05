@@ -41,13 +41,3 @@ def test_query_obo_runs():
 def test_query_read_only_guard():
     r = C.post("/api/query", json={"sql": "DROP TABLE whatever"})
     assert r.status_code == 400
-
-
-def test_hotcache_served_from_lakebase():
-    r = C.get("/api/hotcache", params={"days": 7, "limit": 5})
-    body = r.json()
-    if not body.get("enabled"):
-        pytest.skip("Lakebase not configured")
-    assert len(body["rows"]) > 0
-    # top of the recent hot-cache should be Platform (the insiders)
-    assert body["rows"][0]["team"] == "Platform"

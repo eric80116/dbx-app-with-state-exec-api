@@ -112,13 +112,6 @@ def save(request: Request, body: SaveIn):
     return lakebase.save_query(ident.email, body.title, body.sql)
 
 
-@app.get("/api/hotcache")
-def hotcache(request: Request, days: int = 7, limit: int = 10):
-    """Low-latency top-risk list served from the Lakebase pre-aggregation cache."""
-    auth.get_identity(request)  # require auth
-    return lakebase.hotcache_top(days, limit)
-
-
 @app.post("/api/genie/ask")
 def genie_ask(request: Request, body: AskIn):
     ident = auth.get_identity(request)

@@ -11,7 +11,7 @@ the UI path and a programmatic REST API.
 | Semantic | **UC metric views** (`mv_risk_behavior`, `mv_data_movement`) — the Cube replacement |
 | Agent | **Genie One** managed MCP (workspace-wide, OBO) + a curated Genie space (certified path) |
 | Governance | **ABAC policies + governed tags** — column masks + row filter, enforced under OBO |
-| App store / cache | **Lakebase** — real-time query history, saved queries, metric hot-cache |
+| App store | **Lakebase** — real-time query history + saved queries |
 | Audit | `system.query.history` / `system.access.audit` (per-user via OBO; ~10-min lag) |
 
 **Scenario:** insider data-exfiltration investigation over synthetic R&D engineering activity.
@@ -39,7 +39,7 @@ settings, then asks you to confirm before making any changes.
 ```
 data/          synthetic data gen + metadata/tags/ABAC governance (databricks-connect)
 metric_views/  the governed metric views as YAML (mv_risk_behavior, mv_data_movement)
-bootstrap/     setup.sh (deploy), teardown.sh, genie_agent.json, refresh_hotcache.py
+bootstrap/     setup.sh (deploy), teardown.sh, genie_agent.json
 app/           FastAPI backend (backend/) + React frontend (frontend/) + app.yaml.example
 tests/         pytest acceptance suite   ·   run_tests.sh (top level)
 docs/          DEPLOYMENT.md, DEMO_GUIDE.md, architecture_explainer.html
@@ -52,5 +52,4 @@ Metric views are defined once in `metric_views/*.yaml` (with a `{{FQ}}` placehol
 - Governance uses ABAC + **governed tags** (`data_classification`, `gov_sensitivity`) — these
   keys must be registered in the target account (see DEPLOYMENT.md §6).
 - Genie One MCP scales without the 30-table cap of a curated space and respects UC permissions.
-- The metric hot-cache uses a portable refresh job; a managed Lakebase synced table is the
-  alternative when you have `CREATE CATALOG` (DEPLOYMENT.md §9).
+- The app supports a hybrid Genie scope: the curated space (fast, scoped) or Genie One (broad).

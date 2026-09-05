@@ -29,9 +29,6 @@ PGDATABASE = os.environ.get("PGDATABASE", "databricks_postgres")
 # (the app SP), so we default to it and never need to hardcode the SP id at deploy time.
 PGUSER = os.environ.get("PGUSER") or os.environ.get("DATABRICKS_CLIENT_ID", "")
 SCHEMA = os.environ.get("LAKEBASE_SCHEMA", "app_ops")
-# Postgres table backing the hot-cache. Default: the app's own refreshed table; can point at a
-# managed Lakebase synced table (e.g. public.mv_risk_behavior_daily) instead.
-HOTCACHE_TABLE = os.environ.get("LAKEBASE_HOTCACHE_TABLE", f"{SCHEMA}.metric_hot_cache")
 LOCAL_DEV_PROFILE = os.environ.get("DBX_LOCAL_DEV_PROFILE", "")
 
 
@@ -118,25 +115,6 @@ def save_query(user_email: str, title: str, sql: str) -> dict[str, Any]:
         new_id = cur.fetchone()[0]
         conn.commit()
         return {"id": new_id}
-
-
-def hotcache_top(days: int = 7, limit: int = 10) -> dict[str, Any]:
-    """Low-latency read of the pre-aggregation hot-cache (served from Postgres, not the warehouse)."""
-    if not enabled():
-        return {"enabled": False, "rows": []}
-    try:
-        with _connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                f"SELECT employee_id, team, SUM(high_risk_events) hr, ROUND(AVG(avg_risk)::numeric,1) ar, "
-                f"SUM(after_hours_events) ah FROM {HOTCACHE_TABLE} "
-                f"WHERE event_date >= current_date - %s GROUP BY employee_id, team "
-                f"ORDER BY hr DESC LIMIT %s", (days, limit))
-            rows = [{"employee_id": r[0], "team": r[1], "high_risk_events": r[2],
-                     "avg_risk": float(r[3]) if r[3] is not None else None, "after_hours_events": r[4]}
-                    for r in cur.fetchall()]
-        return {"enabled": True, "rows": rows}
-    except Exception as e:
-        return {"enabled": True, "rows": [], "error": str(e)[:200]}
 
 
 def list_saved(user_email: str) -> list[dict[str, Any]]:

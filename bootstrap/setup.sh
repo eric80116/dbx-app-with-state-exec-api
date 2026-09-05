@@ -4,7 +4,7 @@
 # and docs/DEPLOYMENT.md for which parameters must be set for a given workspace.
 #
 # Idempotent: safe to re-run. Handles the pieces DAB can't (Lakebase, governed data +
-# ABAC, Genie space, hot-cache, SP grants), generates app/app.yaml per target, deploys
+# ABAC, Genie space, SP grants), generates app/app.yaml per target, deploys
 # the App via DAB, wires OBO scopes + the Lakebase resource, and verifies.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -13,7 +13,6 @@ cd "$(dirname "$0")/.."
 PROFILE=""; CATALOG=""; SCHEMA="rd_security_demo"; WAREHOUSE_ID=""
 ANALYST=""; PII_TAG="data_classification=pii"; SENS_TAG="gov_sensitivity=high"
 APP_NAME="rd-security-investigation"; LB_PROJECT="rd-security-demo"; LB_BRANCH="production"
-SYNCED="auto"   # auto | yes | no   (managed Lakebase synced table for the hot-cache)
 SKIP_DATA="no"; ASSUME_YES="no"
 CREATE_TAGS="no"; TAG_KEY="rd_data_class"   # self-create the governed tag (needs account admin)
 
@@ -40,7 +39,6 @@ OPTIONS (defaults in brackets)
   --analyst <principal>   Principal exempted from ABAC masks/row-filter [current user]
   --app-name <name>       Databricks App name [rd-security-investigation]
   --lakebase-project <id> Lakebase project id [rd-security-demo]
-  --synced <auto|yes|no>  Managed Lakebase synced table for hot-cache [auto: use if CREATE CATALOG allowed]
   --skip-data             Skip data generation + governance (reuse existing)
   -y|--yes                Skip the preflight confirmation prompt (non-interactive)
   -h|--help               This help
@@ -57,7 +55,6 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --sens-tag) SENS_TAG="$2"; shift 2;;
   --app-name) APP_NAME="$2"; shift 2;;
   --lakebase-project) LB_PROJECT="$2"; shift 2;;
-  --synced) SYNCED="$2"; shift 2;;
   --skip-data) SKIP_DATA="yes"; shift;;
   --create-tags) CREATE_TAGS="yes"; shift;;
   --tag-key) TAG_KEY="$2"; shift 2;;
@@ -73,7 +70,6 @@ export DATABRICKS_CONFIG_PROFILE="$PROFILE"
 if [[ "$CREATE_TAGS" == "yes" ]]; then PII_TAG="${TAG_KEY}=pii"; SENS_TAG="${TAG_KEY}=restricted"; fi
 
 LB_ENDPOINT="projects/${LB_PROJECT}/branches/${LB_BRANCH}/endpoints/primary"
-LB_UC_CATALOG="lakebase_$(echo "$LB_PROJECT" | tr '-' '_')"
 FQ="${CATALOG}.${SCHEMA}"
 die(){ echo "ERROR: $*" >&2; exit 1; }
 say(){ echo -e "\n=== $* ==="; }
@@ -100,7 +96,7 @@ echo "  catalog:    $CATALOG   schema: $SCHEMA"
 echo "  warehouse:  $WAREHOUSE_ID"
 echo "  analyst:    $ANALYST"
 echo "  pii-tag:    $PII_TAG    sens-tag: $SENS_TAG"
-echo "  app-name:   $APP_NAME   lakebase-project: $LB_PROJECT   synced: $SYNCED"
+echo "  app-name:   $APP_NAME   lakebase-project: $LB_PROJECT"
 
 if [[ "$CREATE_TAGS" == "yes" ]]; then
   echo "  Governed tags: SELF-CREATE '$TAG_KEY' (values: pii,confidential,restricted,internal,public) — needs account admin"
@@ -149,16 +145,6 @@ if [[ "$SKIP_DATA" == "no" ]]; then
     --analyst-principal "$ANALYST" --pii-tag "$PII_TAG" --sens-tag "$SENS_TAG" \
     || die "governance failed — check the pii/sens governed tags exist in this account"
   deactivate
-  say "Pre-aggregation source table (for the hot-cache)"
-  q "CREATE OR REPLACE TABLE ${FQ}.mv_risk_behavior_daily AS
-     SELECT employee_id, CAST(event_time AS DATE) AS event_date, ANY_VALUE(team) AS team,
-       COUNT(*) access_events, SUM(CASE WHEN risk_score>=70 THEN 1 ELSE 0 END) high_risk_events,
-       ROUND(AVG(risk_score),1) avg_risk, SUM(CASE WHEN is_after_hours THEN 1 ELSE 0 END) after_hours_events
-     FROM ${FQ}.fact_access_events GROUP BY employee_id, CAST(event_time AS DATE)" >/dev/null
-  q "ALTER TABLE ${FQ}.mv_risk_behavior_daily ALTER COLUMN employee_id SET NOT NULL" >/dev/null 2>&1 || true
-  q "ALTER TABLE ${FQ}.mv_risk_behavior_daily ALTER COLUMN event_date SET NOT NULL" >/dev/null 2>&1 || true
-  q "ALTER TABLE ${FQ}.mv_risk_behavior_daily ADD CONSTRAINT pk_rbd PRIMARY KEY (employee_id, event_date)" >/dev/null 2>&1 || true
-  q "ALTER TABLE ${FQ}.mv_risk_behavior_daily SET TBLPROPERTIES (delta.enableChangeDataFeed = true)" >/dev/null 2>&1 || true
 fi
 
 # --------------------------------------------------------------- 2. Lakebase
@@ -173,28 +159,6 @@ for i in $(seq 1 20); do
 done
 [[ -z "$LB_HOST" ]] && die "Lakebase endpoint not ready"
 echo "  lakebase host: $LB_HOST"
-
-# ---------------------------------------------- 3. hot-cache: synced (or manual)
-HOTCACHE_TABLE="app_ops.metric_hot_cache"; USE_SYNCED="no"
-if [[ "$SYNCED" != "no" ]]; then
-  say "Attempting managed Lakebase synced table (needs CREATE CATALOG)"
-  if databricks postgres create-catalog "$LB_UC_CATALOG" \
-       --json "{\"spec\":{\"postgres_database\":\"databricks_postgres\",\"branch\":\"projects/${LB_PROJECT}/branches/${LB_BRANCH}\"}}" \
-       --profile "$PROFILE" >/dev/null 2>&1 || databricks catalogs get "$LB_UC_CATALOG" --profile "$PROFILE" >/dev/null 2>&1; then
-    if databricks postgres get-synced-table "synced_tables/${LB_UC_CATALOG}.public.mv_risk_behavior_daily" --profile "$PROFILE" >/dev/null 2>&1; then
-      HOTCACHE_TABLE="public.mv_risk_behavior_daily"; USE_SYNCED="yes"; echo "  managed synced table already exists — reusing"
-    elif databricks postgres create-synced-table "${LB_UC_CATALOG}.public.mv_risk_behavior_daily" \
-      --json "{\"spec\":{\"source_table_full_name\":\"${FQ}.mv_risk_behavior_daily\",\"primary_key_columns\":[\"employee_id\",\"event_date\"],\"scheduling_policy\":\"SNAPSHOT\",\"branch\":\"projects/${LB_PROJECT}/branches/${LB_BRANCH}\",\"postgres_database\":\"databricks_postgres\",\"create_database_objects_if_missing\":true,\"new_pipeline_spec\":{\"storage_catalog\":\"${CATALOG}\",\"storage_schema\":\"${SCHEMA}\"}}}" \
-      --no-wait --profile "$PROFILE" >/dev/null 2>&1; then
-      HOTCACHE_TABLE="public.mv_risk_behavior_daily"; USE_SYNCED="yes"; echo "  managed synced table creating (SNAPSHOT)"
-    else
-      echo "  synced table create failed — falling back to manual hot-cache"
-    fi
-  else
-    echo "  no CREATE CATALOG permission — falling back to manual hot-cache refresh"
-  fi
-fi
-echo "  hot-cache table: $HOTCACHE_TABLE"
 
 # --------------------------------------------------------------- 4. Genie space
 say "Genie space"
@@ -241,8 +205,6 @@ env:
     value: "databricks_postgres"
   - name: LAKEBASE_SCHEMA
     value: "app_ops"
-  - name: LAKEBASE_HOTCACHE_TABLE
-    value: "$HOTCACHE_TABLE"
 EOF
 }
 
@@ -279,8 +241,8 @@ cat > /tmp/app_resources.json <<EOF
 EOF
 databricks apps create-update "$APP_NAME" --json @/tmp/app_resources.json --profile "$PROFILE" >/dev/null || echo "  WARN: could not attach postgres resource — attach it manually (see DEPLOYMENT.md)"
 
-# ---------------------------------------------- 6. Lakebase grants + hot-cache
-say "Lakebase: create app_ops, grant the app SP, populate hot-cache"
+# ---------------------------------------------- 6. Lakebase grants (operational store)
+say "Lakebase: create app_ops (query history + saved queries), grant the app SP"
 PGTOKEN="$(databricks postgres generate-database-credential "$LB_ENDPOINT" --profile "$PROFILE" -o json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')"
 if command -v psql >/dev/null 2>&1 && [[ -n "$PGTOKEN" ]]; then
   PGPASSWORD="$PGTOKEN" psql "host=$LB_HOST user=$CURRENT_USER dbname=databricks_postgres sslmode=require" -v ON_ERROR_STOP=0 -v sp="$SP" >/dev/null 2>&1 <<'SQL'
@@ -295,26 +257,6 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA app_ops GRANT ALL ON TABLES TO :"sp";
 ALTER DEFAULT PRIVILEGES IN SCHEMA app_ops GRANT ALL ON SEQUENCES TO :"sp";
 SQL
   echo "  app_ops ready + granted to SP"
-  if [[ "$USE_SYNCED" == "yes" ]]; then
-    # wait for the synced table to come ONLINE, then grant SELECT (ACL managed by pipeline)
-    for i in $(seq 1 20); do
-      st="$(databricks postgres get-synced-table "synced_tables/${LB_UC_CATALOG}.public.mv_risk_behavior_daily" --profile "$PROFILE" -o json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",{}).get("detailed_state",""))' 2>/dev/null)"
-      [[ "$st" == *ONLINE* ]] && break; echo "  synced table: $st"; sleep 15
-    done
-    PGPASSWORD="$PGTOKEN" psql "host=$LB_HOST user=$CURRENT_USER dbname=databricks_postgres sslmode=require" -v sp="$SP" >/dev/null 2>&1 <<'SQL'
-GRANT USAGE ON SCHEMA public TO :"sp";
-GRANT SELECT ON public.mv_risk_behavior_daily TO :"sp";
-SQL
-    echo "  synced hot-cache granted to SP"
-  else
-    say "Populate manual hot-cache (app_ops.metric_hot_cache)"
-    (source app/.venv/bin/activate && LAKEBASE_ENDPOINT="$LB_ENDPOINT" PGHOST="$LB_HOST" PGDATABASE=databricks_postgres \
-      PGUSER="$CURRENT_USER" LAKEBASE_SCHEMA=app_ops DBX_WAREHOUSE_ID="$WAREHOUSE_ID" \
-      python bootstrap/refresh_hotcache.py --catalog "$CATALOG" --schema "$SCHEMA" --profile "$PROFILE") \
-      && PGPASSWORD="$PGTOKEN" psql "host=$LB_HOST user=$CURRENT_USER dbname=databricks_postgres sslmode=require" -v sp="$SP" >/dev/null 2>&1 <<'SQL'
-GRANT SELECT ON app_ops.metric_hot_cache TO :"sp";
-SQL
-  fi
 else
   echo "  WARN: psql not found or no credential — run the grants in DEPLOYMENT.md §Lakebase grants manually."
 fi

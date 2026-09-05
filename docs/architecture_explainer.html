@@ -198,7 +198,7 @@
       <div class="layer">
         <div class="node"><div class="t">Statement Execution API</div><div class="d">+ Serverless SQL Warehouse&nbsp;<span class="teal">(OBO)</span></div></div>
         <div class="node"><div class="t">Genie One&nbsp;managed MCP</div><div class="d"><code>/api/2.0/mcp/genie</code> · workspace-wide · no table cap&nbsp;<span class="teal">(OBO)</span></div></div>
-        <div class="node"><div class="t">Lakebase&nbsp;(Postgres)</div><div class="d">query history · saved SQL · metric hot-cache</div></div>
+        <div class="node"><div class="t">Lakebase&nbsp;(Postgres)</div><div class="d">real-time query history · saved SQL</div></div>
       </div>
       <div class="arrow">▼</div>
       <div class="layer">
@@ -262,9 +262,8 @@
         <p>Columns carry governed tags (e.g. <code>data_classification=pii</code>). A single schema-level policy
           masks every tagged column; another filters rows by sensitivity — automatically, including on future tables.</p>
         <div class="why"><b>Role:</b> governance follows the data classification, not a hand-maintained per-table rule set.</div></div>
-      <div class="card"><div class="tag">App store &amp; cache</div><h3>Lakebase (Postgres)</h3>
-        <p>Real-time query history and saved queries, plus a pre-aggregated metric hot-cache served from Postgres
-          at low latency (the equivalent of a Cube pre-aggregation).</p>
+      <div class="card"><div class="tag">App store</div><h3>Lakebase (Postgres)</h3>
+        <p>Real-time query history and saved queries, served from managed Postgres at low latency.</p>
         <div class="why"><b>Role:</b> instant, per-user operational state that complements the authoritative — but lagging — system tables.</div></div>
       <div class="card"><div class="tag">Audit</div><h3>System tables</h3>
         <p><code>system.query.history</code> and <code>system.access.audit</code> record who ran which statement,
@@ -361,16 +360,15 @@
   </section>
 
   <section class="reveal">
-    <p class="eyebrow">Operational store &amp; cache</p>
+    <p class="eyebrow">Operational store</p>
     <h2>Lakebase for what system tables can't do live</h2>
     <div class="two">
-      <div class="card"><div class="tag">Operational store</div><h3>Real-time history &amp; saved SQL</h3>
+      <div class="card"><div class="tag">Real-time history</div><h3>Query history</h3>
         <p>Every query run through the app is logged to Postgres immediately and shown in the user's history —
-          without the ~10-minute lag of system tables. Users can also save Genie-suggested statements.</p></div>
-      <div class="card"><div class="tag">Cache</div><h3>Metric hot-cache</h3>
-        <p>A pre-aggregated daily rollup is materialized into Postgres and served at low latency — the Cube
-          pre-aggregation pattern. It can be refreshed on a schedule, or maintained automatically by a managed
-          Lakebase synced table backed by a declarative pipeline.</p></div>
+          without the ~10-minute lag of system tables.</p></div>
+      <div class="card"><div class="tag">Reusable</div><h3>Saved queries</h3>
+        <p>Users can save a Genie-suggested statement (or any query) and pull it back up later — per-user,
+          low-latency app state that doesn't belong in system tables.</p></div>
     </div>
   </section>
 
@@ -388,7 +386,6 @@
           <tr><td><code>/api/genie/poll</code></td><td><span class="pill get">GET</span></td><td>Poll a Genie response for the answer, deep link, and suggested SQL.</td></tr>
           <tr><td><code>/api/history</code></td><td><span class="pill get">GET</span></td><td>The user's recent queries, from Lakebase (real-time).</td></tr>
           <tr><td><code>/api/saved</code></td><td><span class="pill get">GET</span> <span class="pill post">POST</span></td><td>List or save starred SQL statements.</td></tr>
-          <tr><td><code>/api/hotcache</code></td><td><span class="pill get">GET</span></td><td>Top-risk list served from the Lakebase pre-aggregation cache.</td></tr>
           <tr><td><code>/api/me</code></td><td><span class="pill get">GET</span></td><td>The caller's identity and the app's catalog / schema / warehouse context.</td></tr>
         </tbody>
       </table>
@@ -438,7 +435,7 @@
     <div class="grid">
       <div class="card"><div class="tag">Deploy</div><h3>Asset Bundle + bootstrap</h3>
         <p>A Databricks Asset Bundle deploys the App with its OBO scopes; a bootstrap script provisions the pieces
-          the bundle doesn't — Lakebase, governed data, the Genie space, and the hot-cache. The workspace host comes
+          the bundle doesn't — Lakebase, governed data, and the Genie space. The workspace host comes
           from the CLI profile, so the same project deploys anywhere.</p></div>
       <div class="card"><div class="tag">Verify</div><h3>Acceptance test</h3>
         <p>A single test run checks the data, ABAC governance, metric views, Genie, the app API under OBO, Lakebase,
@@ -456,7 +453,7 @@
       <div class="value"><div class="n">01</div><h3>Secure</h3><p>The M2M API stays server-side; users on both the UI and the API query as themselves, and governance is enforced per person.</p></div>
       <div class="value"><div class="n">02</div><h3>Modern governance</h3><p>ABAC plus governed tags bring new tables under policy automatically; Metric Views replace an external semantic layer.</p></div>
       <div class="value"><div class="n">03</div><h3>Great experience</h3><p>Natural language → suggested SQL → run or copy-to-API, end to end.</p></div>
-      <div class="value"><div class="n">04</div><h3>Complete</h3><p>Real-time operational state (Lakebase) alongside the authoritative audit (system tables) and a low-latency cache.</p></div>
+      <div class="value"><div class="n">04</div><h3>Complete</h3><p>Real-time operational state (Lakebase) alongside the authoritative, per-user audit trail (system tables).</p></div>
       <div class="value"><div class="n">05</div><h3>Portable</h3><p>One-command deploy and one-command verification reproduce the whole solution in any workspace.</p></div>
     </div>
   </section>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command acceptance test for the whole demo. Validates data layer, ABAC governance,
-# metric views, Genie, the app REST API + OBO, Lakebase (history + hot-cache), and the
+# metric views, Genie, the app REST API + OBO, Lakebase (query history), and the
 # system-table audit source. Parameterized by env so it works on any deployed workspace.
 #
 # Usage:

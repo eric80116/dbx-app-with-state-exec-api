@@ -7,7 +7,7 @@ that runs every query **On-Behalf-Of the user (OBO)** so UC governance is enforc
 - **Semantic layer**: UC **metric views** (replaces Cube).
 - **Agent**: **Genie One** managed MCP (workspace-wide, no table cap) + a curated Genie space (certified path).
 - **Governance**: **ABAC policies + governed tags** (column masks + row filter), enforced under OBO.
-- **Operational store / cache**: **Lakebase** (query history + saved queries + metric hot-cache).
+- **Operational store**: **Lakebase** (real-time query history + saved queries).
 - **Audit**: `system.query.history` / `system.access.audit` (authoritative; ~10-min lag).
 
 ---
@@ -20,7 +20,7 @@ that runs every query **On-Behalf-Of the user (OBO)** so UC governance is enforc
 | A workspace profile | `databricks auth login --profile <name>` (OAuth) |
 | Serverless SQL warehouse | id → DAB var `warehouse_id` |
 | Databricks Apps + **user authorization (OBO)** enabled | required for per-user execution |
-| **Lakebase (Autoscaling)** enabled | for the operational store + hot-cache |
+| **Lakebase (Autoscaling)** enabled | for the operational store (query history + saved queries) |
 | **Genie** enabled | Genie One MCP: `POST /api/2.0/mcp/genie` |
 | **Governed tags** `data_classification`, `gov_sensitivity` registered in the account | required by the ABAC policies — see §6 |
 | `uv`, `bun`, `jq`, `python3.12` locally | for data-gen venv + frontend build |
@@ -45,7 +45,6 @@ account's available governed tags, then asks you to confirm before doing anythin
 | `--analyst` | No | current user | Principal exempted from ABAC masks/row-filter (the "analyst" persona). Use an **account group** in production. |
 | `--app-name` | No | `rd-security-investigation` | Databricks App name (unique per workspace). |
 | `--lakebase-project` | No | `rd-security-demo` | Lakebase project id (created if missing). |
-| `--synced` | No | `auto` | `auto` uses a managed Lakebase synced table for the hot-cache **if** you have `CREATE CATALOG`; otherwise falls back to the manual refresh. Force with `yes`/`no`. |
 
 ### Governed tags — pick ONE mode
 
@@ -98,7 +97,7 @@ bootstrap/setup.sh --profile <p> --catalog <c> --pii-tag <key=value> --sens-tag 
 bootstrap/setup.sh --profile <p> --catalog <c> \
     [--create-tags [--tag-key rd_data_class] | --pii-tag key=value --sens-tag key=value] \
     [--schema <s>] [--warehouse <id>] [--analyst <principal>] \
-    [--app-name <n>] [--lakebase-project <id>] [--synced auto|yes|no]
+    [--app-name <n>] [--lakebase-project <id>]
 ```
 
 Idempotent; re-runnable. It runs, in this order (the order matters — see notes):
@@ -106,35 +105,31 @@ Idempotent; re-runnable. It runs, in this order (the order matters — see notes
 2. **Venvs** — `.venv` (data-gen) and `app/.venv` (app deps incl. `psycopg`).
 3. **Governed tag** — with `--create-tags`, create the governed tag policy (idempotent; needs
    account admin). Then **data + governance** — create the catalog, generate data, apply
-   metadata + metric views + ABAC (using the self-created tag or your `--pii-tag`/`--sens-tag`),
-   build the pre-aggregation table.
+   metadata + metric views + ABAC (using the self-created tag or your `--pii-tag`/`--sens-tag`).
 4. **Lakebase** — create the project (if missing), read its endpoint host.
-5. **Hot-cache** — try a managed synced table (needs `CREATE CATALOG`); else fall back to the
-   manual refresh. Sets the hot-cache table name accordingly.
-6. **Genie space** — create it (remapped to your catalog/schema) if absent.
-7. **App deploy** — build the frontend, generate `app/app.yaml`, then a **clean create**:
+5. **Genie space** — create it (remapped to your catalog/schema) if absent.
+6. **App deploy** — build the frontend, generate `app/app.yaml`, then a **clean create**:
    `bundle destroy` clears any prior app + bundle state, `bundle deploy` **creates** the app
    (OBO scopes come from the bundle at create), `bundle run` deploys the code and **starts**
    compute, and `apps create-update` (update_mask=resources) attaches the Lakebase `postgres`
    resource. The app reads its own SP id from the injected `DATABRICKS_CLIENT_ID`, so no
    pre-deploy service-principal lookup is needed. (Delete-then-create avoids a CLI update-mask
    bug where updating an app with user authorization sends a rejected `forward_user_access_token`.)
-8. **Lakebase grants** — as the project owner, create `app_ops` + `GRANT` it (and the hot-cache
-   table) to the app SP; populate the manual hot-cache if not using the synced table.
+7. **Lakebase grants** — as the project owner, create the `app_ops` schema (query history +
+   saved queries) and `GRANT` it to the app SP.
 
 Then validate (§5).
 
-> **Why the ordering and grants matter (both were real failure modes):**
-> - `app/app.yaml` and `requirements.txt` must live at the **app source root** — Databricks Apps
->   installs deps from `app/requirements.txt`, not a nested path.
+> **Why the ordering and grants matter (all were real failure modes):**
+> - `app/app.yaml`, `app/requirements.txt`, and the built `app/backend/static/` must be uploaded
+>   from the **app source root**; they are `.gitignore`d, so `databricks.yml` force-includes them
+>   via `sync.include` (otherwise: no `command` → won't start, or no SPA → blank page).
 > - The DAB `database` resource key does **not** work on Lakebase Autoscaling; the `postgres` key
->   is attached via `apps create-update` **after** the final `bundle deploy` (a bundle deploy
->   resets the app's resources array).
-> - Attaching/re-attaching the Lakebase resource can rotate the app SP's effective Postgres role,
->   so the SP may not own `app_ops`. setup.sh therefore **grants** the SP explicitly (as the
->   project owner) rather than relying on ownership — this is idempotent and survives redeploys.
-> - Synced-table ACLs are managed by the sync pipeline, so the SP `GRANT SELECT` is applied
->   **after** the table is `ONLINE`.
+>   is attached via `apps create-update` **after** the `bundle deploy`.
+> - Attaching the Lakebase resource can rotate the app SP's effective Postgres role, so the SP may
+>   not own `app_ops`. setup.sh therefore **grants** the SP explicitly (as the project owner)
+>   rather than relying on ownership — idempotent and survives redeploys.
+> - App deletion is async, so setup.sh waits for it before recreating (else `409 ALREADY_EXISTS`).
 
 ---
 
@@ -161,15 +156,13 @@ Gotchas: the Genie scope is **`genie`**, *not* `dashboards.genie`; and do **not*
 ### App environment (`app/app.yaml`, generated by setup.sh)
 `DBX_WAREHOUSE_ID`, `DBX_CATALOG`, `DBX_SCHEMA`, `DBX_GENIE_SPACE_ID`; `DATABRICKS_HOST` is
 injected by the runtime (the app prepends `https://` if the injected value lacks a scheme).
-For Lakebase: `LAKEBASE_ENDPOINT`, `PGHOST`, `PGDATABASE`, `LAKEBASE_SCHEMA=app_ops`, and
-`LAKEBASE_HOTCACHE_TABLE` (`public.mv_risk_behavior_daily` for a managed synced table, or
-`app_ops.metric_hot_cache` for the manual refresh). `PGUSER` is **not set** — the app defaults
-it to the injected `DATABRICKS_CLIENT_ID` (its own service principal).
+For Lakebase: `LAKEBASE_ENDPOINT`, `PGHOST`, `PGDATABASE`, `LAKEBASE_SCHEMA=app_ops`. `PGUSER` is
+**not set** — the app defaults it to the injected `DATABRICKS_CLIENT_ID` (its own service principal).
 
 ### Lakebase grants (run as the project owner; setup.sh does this automatically)
-The app SP needs access to `app_ops` and to the hot-cache table. Because attaching the Lakebase
-resource can rotate the SP's effective Postgres role, grant it explicitly rather than relying on
-ownership. Connect with the endpoint host + a generated credential
+The app SP needs access to the `app_ops` schema (query history + saved queries). Because attaching
+the Lakebase resource can rotate the SP's effective Postgres role, grant it explicitly rather than
+relying on ownership. Connect with the endpoint host + a generated credential
 (`databricks postgres generate-database-credential <endpoint>`), then:
 ```sql
 GRANT USAGE, CREATE ON SCHEMA app_ops TO "<app-sp-client-id>";
@@ -177,9 +170,6 @@ GRANT ALL ON ALL TABLES    IN SCHEMA app_ops TO "<app-sp-client-id>";
 GRANT ALL ON ALL SEQUENCES IN SCHEMA app_ops TO "<app-sp-client-id>";
 ALTER DEFAULT PRIVILEGES IN SCHEMA app_ops GRANT ALL ON TABLES    TO "<app-sp-client-id>";
 ALTER DEFAULT PRIVILEGES IN SCHEMA app_ops GRANT ALL ON SEQUENCES TO "<app-sp-client-id>";
--- hot-cache (managed synced table shown; run AFTER it is ONLINE):
-GRANT USAGE ON SCHEMA public TO "<app-sp-client-id>";
-GRANT SELECT ON public.mv_risk_behavior_daily TO "<app-sp-client-id>";
 ```
 Get the SP client id from `databricks apps get <app-name>` → `service_principal_client_id`.
 
@@ -191,7 +181,7 @@ Get the SP client id from `databricks apps get <app-name>` → `service_principa
 ./run_tests.sh --profile <profile> --app-url <deployed-app-url>
 ```
 19 checks across: data layer, ABAC governance, metric views, Genie space + Genie flow,
-app REST API + OBO, Lakebase history, hot-cache, and the system-table audit source.
+app REST API + OBO, Lakebase query history, and the system-table audit source.
 Locally the app runs at `http://127.0.0.1:8077` (see §7); pass that as `--app-url`.
 
 ---
@@ -254,26 +244,7 @@ ORDER BY event_time DESC;
 
 ---
 
-## 9. Metric hot-cache: managed synced-table alternative
-
-`bootstrap/refresh_hotcache.py` materializes the pre-aggregation into a plain Lakebase table
-(portable; works without extra privileges). If you have **CREATE CATALOG** on the metastore,
-you can instead use a **managed Lakebase synced table** (auto-refreshing):
-
-```bash
-databricks postgres create-catalog lakebase_rd_security \
-  --json '{"spec": {"postgres_database": "databricks_postgres", "branch": "projects/rd-security-demo/branches/production"}}'
-databricks postgres create-synced-table lakebase_rd_security.public.mv_risk_behavior_daily \
-  --json '{"spec": {"source_table_full_name": "<cat>.<sch>.mv_risk_behavior_daily",
-    "primary_key_columns": ["employee_id","event_date"], "scheduling_policy": "TRIGGERED",
-    "branch": "projects/rd-security-demo/branches/production", "postgres_database": "databricks_postgres",
-    "create_database_objects_if_missing": true,
-    "new_pipeline_spec": {"storage_catalog": "<cat>", "storage_schema": "<sch>"}}}'
-```
-
----
-
-## 10. Teardown
+## 9. Teardown
 
 One command removes everything setup.sh created (App, Lakebase project incl. its Postgres data,
 Lakebase UC catalog, Genie space, and the demo schema). It confirms first (`--yes` to skip):
