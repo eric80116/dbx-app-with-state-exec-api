@@ -66,13 +66,28 @@ if [[ "$ASSUME_YES" != "yes" ]]; then
 fi
 
 say "Delete App ($APP_NAME)"
-databricks apps delete "$APP_NAME" --profile "$PROFILE" 2>&1 | grep -iE "deleted|error|not found" | head -1 || echo "  (app absent)"
+if databricks apps get "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1; then
+  databricks apps delete "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
+  # deletion is async — wait until it's actually gone (else it keeps billing / a verify fails)
+  for _ in $(seq 1 30); do databricks apps get "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || break; sleep 4; done
+  databricks apps get "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 && echo "  WARN: app still present" || echo "  app deleted"
+else
+  echo "  app absent"
+fi
+
+say "Delete Lakebase UC catalog ($LB_UC_CATALOG)"
+# A Lakebase-registered catalog is MANAGED_ONLINE_CATALOG — use `postgres delete-catalog`
+# (with the catalogs/<name> resource path); plain `catalogs delete` is rejected. Do this
+# BEFORE deleting the project it's backed by.
+if databricks catalogs get "$LB_UC_CATALOG" --profile "$PROFILE" >/dev/null 2>&1; then
+  databricks postgres delete-catalog "catalogs/${LB_UC_CATALOG}" --profile "$PROFILE" >/dev/null 2>&1 || true
+  databricks catalogs get "$LB_UC_CATALOG" --profile "$PROFILE" >/dev/null 2>&1 && echo "  WARN: catalog still present" || echo "  catalog deleted"
+else
+  echo "  catalog absent"
+fi
 
 say "Delete Lakebase project ($LB_PROJECT)"
 databricks postgres delete-project "projects/${LB_PROJECT}" --profile "$PROFILE" 2>&1 | grep -iE "error|not found" | head -1 || echo "  deleted (or absent)"
-
-say "Delete Lakebase UC catalog ($LB_UC_CATALOG)"
-databricks catalogs delete "$LB_UC_CATALOG" --force --profile "$PROFILE" 2>&1 | grep -iE "error|not found" | head -1 || echo "  deleted (or absent)"
 
 say "Trash Genie space(s) titled 'RD Security Investigation'"
 databricks genie list-spaces --profile "$PROFILE" -o json 2>/dev/null \
