@@ -48,29 +48,19 @@ and don't reuse a **Lakebase project name** you just tore down — wait a few mi
 
 ## 1. Prerequisites
 
-> **You don't have to check these by hand.** `bootstrap/setup.sh` runs an interactive
-> **prerequisite check** first — verifying each item below, auto-resolving values (e.g. picking
-> the serverless warehouse) and prompting you to choose/fill anything missing or ambiguous. Run
-> it standalone without deploying:
-> ```bash
-> bootstrap/setup.sh --profile <p> --catalog <c> --check
-> ```
-> It prints `[ OK ] / [WARN] / [FAIL]` per item and stops on any hard failure. The list below is
-> what it checks.
+> You don't check these by hand — the `--check` preflight (§0) verifies them all and stops on any
+> hard failure. This table is what it checks.
 
 | Requirement | Notes |
 |---|---|
-| Databricks CLI ≥ v0.294 | `databricks --version` (tested on v1.14.0) |
+| Databricks CLI ≥ v0.294 | tested on v1.14.0 |
 | A workspace profile | `databricks auth login --profile <name>` (OAuth) |
-| Serverless SQL warehouse | id → DAB var `warehouse_id` |
+| Serverless SQL warehouse | auto-picked, or `--warehouse <id>` |
 | Databricks Apps + **user authorization (OBO)** enabled | required for per-user execution |
-| **Lakebase (Autoscaling)** enabled | for the operational store (query history + saved queries) |
+| **Lakebase (Autoscaling)** enabled | operational store (query history + saved queries) |
 | **Genie** enabled | Genie One MCP: `POST /api/2.0/mcp/genie` |
-| **Governed tags** `data_classification`, `gov_sensitivity` registered in the account | required by the ABAC policies — see §6 |
-| `uv`, `bun`, `jq`, `python3.12` locally | for data-gen venv + frontend build |
-
-Local tools that mint a token but **do not** carry into the deployed app: the app uses the
-Apps-injected `X-Forwarded-Access-Token` (browser) or a caller Bearer token (API).
+| **Governed tags** for the ABAC policies | self-created (`--create-tags`, needs admin) or existing ones you pass — see §2 |
+| `uv`, `bun`, `jq`, `python3.12`, `psql` locally | data-gen venv, frontend build, Lakebase grants |
 
 ---
 
@@ -123,25 +113,16 @@ SELECT DISTINCT tag_name, tag_value FROM system.information_schema.column_tags O
 stops early rather than half-applying. If you have neither account-admin (for A) nor suitable
 existing tags (for B), an account admin must register a governed tag first.
 
-**Prerequisite toggles to confirm in the workspace:** Databricks Apps **user authorization (OBO)**,
-**Lakebase (Autoscaling)**, **Genie**, and a **serverless SQL warehouse**.
-
 ---
 
-## 3. One-command deploy
+## 3. What the deploy does
 
+The deploy command is in §0. Full option list:
 ```bash
-# Recommended for a fresh/customer workspace — self-creates the governed tag (needs account admin):
-bootstrap/setup.sh --profile <p> --catalog <c> --create-tags
-
-# Or point at existing governed tags instead of creating one:
-bootstrap/setup.sh --profile <p> --catalog <c> --pii-tag <key=value> --sens-tag <key=value>
-
-# Full option list:
 bootstrap/setup.sh --profile <p> --catalog <c> \
     [--create-tags [--tag-key rd_data_class] | --pii-tag key=value --sens-tag key=value] \
     [--schema <s>] [--warehouse <id>] [--analyst <principal>] \
-    [--app-name <n>] [--lakebase-project <id>]
+    [--app-name <n>] [--lakebase-project <id>] [--check] [--yes] [--skip-data]
 ```
 
 Idempotent; re-runnable. It runs, in this order (the order matters — see notes):
@@ -179,19 +160,11 @@ Then validate (§5).
 
 ---
 
-## 4. Manual step-by-step (if not using setup.sh)
+## 4. App configuration reference (what setup.sh applies)
 
-```bash
-export DATABRICKS_CONFIG_PROFILE=<profile>
-# data + governance
-source .venv/bin/activate
-python data/generate_synthetic_data.py       --catalog <cat> --schema <sch>
-python data/apply_metadata_and_governance.py  --catalog <cat> --schema <sch> --analyst-principal <you@co>
-# app
-cd app/frontend && bun install && bun run build && cd ../..
-databricks bundle deploy -t dev --profile <profile>
-databricks apps deploy rd-security-investigation --profile <profile>
-```
+Use `bootstrap/setup.sh` for deployment — the app-deploy sequence (clean create, `bundle run`,
+resource attach, grants; see §3 notes) is order-sensitive and easy to get wrong by hand. This
+section documents *what* it configures, for debugging.
 
 ### App OBO scopes (declared in `databricks.yml`)
 `sql.statement-execution`, `sql.warehouses`, `catalog.catalogs`, `catalog.schemas`,
@@ -232,22 +205,15 @@ Locally the app runs at `http://127.0.0.1:8077` (see §7); pass that as `--app-u
 
 ---
 
-## 6. Governed tags prerequisite (portability)
+## 6. How the ABAC policies use the tags
 
-The ABAC policies select columns by governed tag, and the tag key/value are **parameters**
-(`--pii-tag` / `--sens-tag` on setup.sh, or `--pii-tag`/`--sens-tag` on
-`apply_metadata_and_governance.py`) — nothing is hardcoded:
-- column mask `rd_mask_pii` → `has_tag_value(<pii-key>, <pii-value>)`  (default `data_classification=pii`)
-- row filter `rd_rf_sensitivity` → `has_tag_value(<sens-key>, <sens-value>)`  (default `gov_sensitivity=high`)
+Choosing/passing the tags is §2; this is what the policies do with them:
+- column mask `rd_mask_pii` → `has_tag_value(<pii-key>, <pii-value>)` on tagged PII columns
+- row filter `rd_rf_sensitivity` → `has_tag_value(<sens-key>, <sens-value>)` on the sensitivity column
 
-These **tag keys must be registered governed tags in the target account** (only allowed keys
-work in `has_tag`; free-form tags are rejected, and non-policy keys fail with *"Unknown tag
-policy key"*). **Values are policy-constrained and case-sensitive** — e.g. one account accepts
-`sensitivity=HIGH`, another `gov_sensitivity=high`. Discover valid keys/values with the query in
-§2, pass them via the flags, and `apply_metadata_and_governance.py` fails loudly if they're wrong.
-
-The persona toggle is the policy's `TO account users EXCEPT <analyst>` clause; in production
-replace the explicit principal with an **account group** (e.g. `security_analysts`).
+The **persona toggle** is the policy's `TO account users EXCEPT <analyst>` clause — the analyst
+principal sees plaintext + all rows, everyone else gets masked PII and no restricted rows. In
+production, replace the explicit `--analyst` principal with an **account group** (e.g. `security_analysts`).
 
 ---
 
