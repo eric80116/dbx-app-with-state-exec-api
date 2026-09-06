@@ -12,6 +12,40 @@ that runs every query **On-Behalf-Of the user (OBO)** so UC governance is enforc
 
 ---
 
+## 0. Quick start (end to end)
+
+Full runbook for a fresh workspace. Details for each step are in the numbered sections below.
+
+```bash
+# 0a. Get the code + local tools (on your machine)
+git clone https://github.com/eric80116/dbx-app-with-state-exec-api
+cd dbx-app-with-state-exec-api
+#     required local tools: databricks CLI, uv, bun, jq, python3.12, psql
+databricks auth login --profile <PROFILE>          # authenticate to the target workspace
+
+# 1. Prerequisite check only (creates nothing) — read the [OK]/[WARN]/[FAIL] report
+bootstrap/setup.sh --profile <PROFILE> --catalog <CATALOG> --check
+
+# 2. Deploy (interactive; prints the App URL at the end)
+#    Governed tags — choose ONE:
+#      (a) account admin  → add --create-tags   (the script creates its own governed tag)
+#      (b) use existing   → --pii-tag key=value --sens-tag key=value  (keys the --check listed)
+bootstrap/setup.sh --profile <PROFILE> --catalog <CATALOG> --create-tags     # add --yes for non-interactive
+
+# 3. Verify the deployment (19 checks)
+./run_tests.sh --profile <PROFILE> --app-url <APP_URL_FROM_STEP_2>
+
+# 4. Teardown when finished, then confirm nothing is left billing
+bootstrap/teardown.sh --profile <PROFILE> --catalog <CATALOG> --drop-catalog --drop-tag
+./verify_teardown.sh  --profile <PROFILE> --catalog <CATALOG> --dropped-catalog --dropped-tag
+```
+
+**Two gotchas:** `--create-tags` needs **account admin** (else use existing tags per the check);
+and don't reuse a **Lakebase project name** you just tore down — wait a few minutes or pass
+`--lakebase-project <new-name>`.
+
+---
+
 ## 1. Prerequisites
 
 > **You don't have to check these by hand.** `bootstrap/setup.sh` runs an interactive
