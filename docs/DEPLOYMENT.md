@@ -33,8 +33,8 @@ bootstrap/setup.sh --profile <PROFILE> --catalog <CATALOG> --check
 #      (b) use existing   → --pii-tag key=value --sens-tag key=value  (keys the --check listed)
 bootstrap/setup.sh --profile <PROFILE> --catalog <CATALOG> --create-tags     # add --yes for non-interactive
 
-# 3. Verify the deployment (19 checks)
-./run_tests.sh --profile <PROFILE> --app-url <APP_URL_FROM_STEP_2>
+# 3. Verify the deployment (data + governance + Genie run headless; see §5 note on app checks)
+./run_tests.sh --profile <PROFILE> --catalog <CATALOG> --app-url <APP_URL_FROM_STEP_2>
 
 # 4. Teardown when finished, then confirm nothing is left billing
 bootstrap/teardown.sh --profile <PROFILE> --catalog <CATALOG> --drop-catalog --drop-tag
@@ -198,11 +198,19 @@ Get the SP client id from `databricks apps get <app-name>` → `service_principa
 ## 5. Acceptance test (one command)
 
 ```bash
-./run_tests.sh --profile <profile> --app-url <deployed-app-url>
+./run_tests.sh --profile <profile> --catalog <catalog> --app-url <deployed-app-url>
 ```
-19 checks across: data layer, ABAC governance, metric views, Genie space + Genie flow,
-app REST API + OBO, Lakebase query history, and the system-table audit source.
-Locally the app runs at `http://127.0.0.1:8077` (see §7); pass that as `--app-url`.
+Resolves the warehouse, Genie space, and analyst from the target workspace (override with
+`--warehouse` / `--genie-space` / `--analyst`); pass `--tag-key` or `--pii-tag/--sens-tag`
+to assert the exact governed-tag keys. Checks: data layer, ABAC governance, metric views,
+Genie space + Genie flow, app REST API + OBO, Lakebase query history, system-table audit.
+
+**App checks vs. a deployed app:** a deployed app uses **user-authorization (OBO)**, so its
+front door is the platform's OAuth gateway — a script token can't drive it, and those app
+checks **skip** with a clear reason (verify the UI in the browser, which you've already done).
+They run in full against a **local uvicorn** (`http://127.0.0.1:8077`, see §7) — pass that as
+`--app-url` to exercise the REST API + OBO path headlessly. The data/governance/Genie checks
+always run against the workspace regardless.
 
 ---
 

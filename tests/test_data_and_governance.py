@@ -1,6 +1,13 @@
 """Data layer + ABAC governance validation."""
+import os
 import pytest
 from conftest import FQ, CATALOG, SCHEMA
+
+# Optional exact tag-key assertions. Deploys self-create `rd_data_class` (--create-tags) or
+# reuse existing keys (--pii-tag/--sens-tag), so the key name varies per workspace. When
+# run_tests.sh knows the keys it exports them; otherwise the check is key-agnostic.
+PII_TAG_KEY = os.environ.get("DBX_PII_TAG_KEY", "")
+SENS_TAG_KEY = os.environ.get("DBX_SENS_TAG_KEY", "")
 
 EXPECTED_TABLES = ["dim_employee", "dim_asset", "fact_access_events", "fact_code_commits", "fact_data_downloads"]
 EXPECTED_METRIC_VIEWS = ["mv_risk_behavior", "mv_data_movement"]
@@ -35,12 +42,24 @@ def test_tables_have_comments(sql):
 
 
 def test_governed_tags_present(sql):
+    """The PII columns must carry the governed tag the column-mask policy matches on, and a
+    sensitivity tag must exist for the row filter. Tag KEYS vary per deploy (rd_data_class
+    when self-created, or the customer's existing keys), so assert key-agnostically unless
+    run_tests.sh pinned the exact keys via DBX_PII_TAG_KEY / DBX_SENS_TAG_KEY."""
     rows = sql(f"SELECT table_name, column_name, tag_name FROM {CATALOG}.information_schema.column_tags "
                f"WHERE schema_name='{SCHEMA}'")
     tags = {(r[0], r[1], r[2]) for r in rows}
-    assert ("dim_employee", "email", "data_classification") in tags
-    assert ("fact_access_events", "source_ip", "data_classification") in tags
-    assert any(t[2] == "gov_sensitivity" for t in tags), "no gov_sensitivity tag for row filter"
+
+    def col_tagged(tbl, col):
+        return any(t[0] == tbl and t[1] == col and (not PII_TAG_KEY or t[2] == PII_TAG_KEY) for t in tags)
+
+    key_hint = f" with key '{PII_TAG_KEY}'" if PII_TAG_KEY else ""
+    assert col_tagged("dim_employee", "email"), f"dim_employee.email is not governed-tagged{key_hint} (PII mask relies on it)"
+    assert col_tagged("fact_access_events", "source_ip"), f"fact_access_events.source_ip is not governed-tagged{key_hint}"
+    if SENS_TAG_KEY:
+        assert any(t[2] == SENS_TAG_KEY for t in tags), f"no '{SENS_TAG_KEY}' tag for the row filter"
+    else:
+        assert tags, "no governed column tags applied to the schema"
 
 
 def test_abac_policies_exist(sql):

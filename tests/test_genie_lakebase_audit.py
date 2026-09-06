@@ -1,13 +1,14 @@
 """Genie space, Genie flow via app, Lakebase operational store, and system-table audit."""
 import time
-import httpx
 import pytest
-from conftest import APP_URL, GENIE_SPACE_ID, PROFILE, FQ
+from conftest import GENIE_SPACE_ID, PROFILE, FQ, app_client, require_app
 
-C = httpx.Client(base_url=APP_URL, timeout=180)
+C = app_client(timeout=180)
 
 
 def test_genie_space_exists(w):
+    if not GENIE_SPACE_ID:
+        pytest.skip("no curated Genie space id resolved (workspace uses Genie One only)")
     # SDK method name varies across versions; use the stable REST endpoint.
     space = w.api_client.do("GET", f"/api/2.0/genie/spaces/{GENIE_SPACE_ID}")
     assert space.get("space_id") == GENIE_SPACE_ID or space.get("title")
@@ -17,6 +18,7 @@ def test_genie_ask_returns_answer_via_app():
     """Full Genie One flow through the app: ask -> poll -> completed with an answer.
     (query_items / suggested SQL is populated when Genie runs a query, but not guaranteed
     on every turn, so we assert on the answer and treat suggested SQL as a bonus.)"""
+    require_app()
     a = C.post("/api/genie/ask", json={"question": "Which engineers showed the most high-risk behavior this week?"})
     assert a.status_code == 200
     ask = a.json()
@@ -35,6 +37,7 @@ def test_genie_ask_returns_answer_via_app():
 
 
 def test_lakebase_history_logged():
+    require_app()
     hist = C.get("/api/history").json()
     if not hist.get("lakebase"):
         pytest.skip("Lakebase not configured")
