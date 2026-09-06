@@ -23,7 +23,8 @@ cd dbx-app-with-state-exec-api
 #     required local tools: databricks CLI, uv, bun, jq, python3.12, psql
 databricks auth login --profile <PROFILE>          # authenticate to the target workspace
 
-# 1. Prerequisite check only (creates nothing) — read the [OK]/[WARN]/[FAIL] report
+# 1. Prerequisite check only — a READ-ONLY report ([OK]/[WARN]/[FAIL]); creates nothing and
+#    asks nothing. It tells you which governed-tag flag step 2 needs; step 2 does the work.
 bootstrap/setup.sh --profile <PROFILE> --catalog <CATALOG> --check
 
 # 2. Deploy (interactive; prints the App URL at the end)

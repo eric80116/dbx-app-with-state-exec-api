@@ -82,7 +82,9 @@ q(){ databricks experimental aitools tools query "$1" --profile "$PROFILE" 2>&1 
 # are missing or ambiguous. With --yes everything is non-interactive (auto/first/defaults).
 FAILED=0
 ck(){ case "$1" in OK) echo "  [ OK ] $2";; WARN) echo "  [WARN] $2";; FAIL) echo "  [FAIL] $2"; FAILED=1;; esac; }
-ask(){ local v; if [[ "$ASSUME_YES" == "yes" ]]; then echo "$2"; return; fi; read -r -p "  ↳ $1 [$2]: " v </dev/tty; echo "${v:-$2}"; }
+# Interactive only during a real deploy — never in --check (a read-only report) or --yes.
+interactive(){ [[ "$ASSUME_YES" != "yes" && "$CHECK_ONLY" != "yes" ]]; }
+ask(){ local v; if ! interactive; then echo "$2"; return; fi; read -r -p "  ↳ $1 [$2]: " v </dev/tty; echo "${v:-$2}"; }
 say "Preflight — checking prerequisites"
 
 # CLI
@@ -113,9 +115,10 @@ for w in json.load(sys.stdin):
   WH_COUNT="$(printf '%s\n' "$WH_LIST" | grep -c . || true)"
   if [[ -z "$WH_LIST" ]]; then
     ck FAIL "No serverless SQL warehouse found — create one or pass --warehouse <id>"
-  elif [[ "$WH_COUNT" -eq 1 || "$ASSUME_YES" == "yes" ]]; then
+  elif [[ "$WH_COUNT" -eq 1 ]] || ! interactive; then
     WAREHOUSE_ID="$(printf '%s\n' "$WH_LIST" | head -1 | cut -f1)"
     ck OK "SQL warehouse: $WAREHOUSE_ID"
+    [[ "$WH_COUNT" -gt 1 ]] && ck WARN "$WH_COUNT serverless warehouses found — auto-picked the first; pass --warehouse <id> to choose"
   else
     echo "  Multiple serverless warehouses — pick one:"
     printf '%s\n' "$WH_LIST" | cut -f1,2 | nl -w6 -s') '
@@ -157,13 +160,15 @@ else
   else
     ck WARN "Governed tag key(s) not found in account — pii key '$pk' / sens key '$sk'"
     echo "     Available governed tag keys:"; echo "$AVAIL" | sed 's/^/       - /' | head -30
-    if [[ "$ASSUME_YES" != "yes" ]]; then
+    if interactive; then
       read -r -p "  ↳ [c]reate a governed tag now (needs admin) / [e]nter existing key=value pairs / [k]eep as-is: " g </dev/tty
       case "$g" in
         c|C) CREATE_TAGS="yes"; PII_TAG="${TAG_KEY}=pii"; SENS_TAG="${TAG_KEY}=restricted"; ck OK "Will self-create '$TAG_KEY'";;
         e|E) PII_TAG="$(ask "pii tag (key=value)" "$PII_TAG")"; SENS_TAG="$(ask "sensitivity tag (key=value)" "$SENS_TAG")";;
         *) ck WARN "Keeping '$PII_TAG' / '$SENS_TAG' — governance will fail if these aren't valid";;
       esac
+    else
+      ck WARN "--check: pass --create-tags (self-create, needs admin) or --pii-tag/--sens-tag at deploy time"
     fi
   fi
 fi
