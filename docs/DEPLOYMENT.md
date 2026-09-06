@@ -14,6 +14,16 @@ that runs every query **On-Behalf-Of the user (OBO)** so UC governance is enforc
 
 ## 1. Prerequisites
 
+> **You don't have to check these by hand.** `bootstrap/setup.sh` runs an interactive
+> **prerequisite check** first — verifying each item below, auto-resolving values (e.g. picking
+> the serverless warehouse) and prompting you to choose/fill anything missing or ambiguous. Run
+> it standalone without deploying:
+> ```bash
+> bootstrap/setup.sh --profile <p> --catalog <c> --check
+> ```
+> It prints `[ OK ] / [WARN] / [FAIL]` per item and stops on any hard failure. The list below is
+> what it checks.
+
 | Requirement | Notes |
 |---|---|
 | Databricks CLI ≥ v0.294 | `databricks --version` (tested on v1.14.0) |
@@ -101,7 +111,9 @@ bootstrap/setup.sh --profile <p> --catalog <c> \
 ```
 
 Idempotent; re-runnable. It runs, in this order (the order matters — see notes):
-1. **Preflight** — resolve host/user/warehouse, list the account's governed tags, confirm.
+1. **Preflight** (interactive) — verify CLI/auth/host, Lakebase/Apps/Genie reachability, local
+   tools, warehouse (auto or pick), catalog, analyst principal, and governed tags; prompt to
+   pick/fill anything missing, print `[OK]/[WARN]/[FAIL]`, and confirm. `--check` runs just this.
 2. **Venvs** — `.venv` (data-gen) and `app/.venv` (app deps incl. `psycopg`).
 3. **Governed tag** — with `--create-tags`, create the governed tag policy (idempotent; needs
    account admin). Then **data + governance** — create the catalog, generate data, apply
