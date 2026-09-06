@@ -337,7 +337,12 @@ else
 fi
 
 APP_URL="$(databricks apps get "$APP_NAME" --profile "$PROFILE" -o json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("url",""))')"
+if [[ "$CREATE_TAGS" == "yes" ]]; then TAG_FLAGS="--tag-key $TAG_KEY"; else TAG_FLAGS="--pii-tag $PII_TAG --sens-tag $SENS_TAG"; fi
 say "DONE"
 echo "  App:  ${APP_URL:-<databricks apps get $APP_NAME>}"
-echo "  Verify: ./run_tests.sh --profile $PROFILE --app-url ${APP_URL:-<app-url>}"
-echo "  (set the same DBX_CATALOG/DBX_SCHEMA/DBX_WAREHOUSE_ID/DBX_GENIE_SPACE_ID env for run_tests if non-default)"
+echo "  Verify:"
+echo "    ./run_tests.sh --profile $PROFILE --catalog $CATALOG --schema $SCHEMA \\"
+echo "      --warehouse $WAREHOUSE_ID --genie-space ${GENIE_SPACE_ID:-<space-id>} $TAG_FLAGS \\"
+echo "      --app-url ${APP_URL:-<app-url>}"
+echo "  (data/governance/Genie checks run headless; the app REST checks skip against a deployed"
+echo "   OBO app — run them against a local uvicorn per DEPLOYMENT.md §5/§7.)"
